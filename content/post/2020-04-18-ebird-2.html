@@ -1,0 +1,330 @@
+---
+title: eBirding in Allegheny County 
+author: Conor Tompkins
+date: '2020-04-18'
+slug: ebirding-in-allegheny-county 
+categories:
+  - R
+tags:
+  - EBird
+---
+
+
+
+<p>In this post I will do some exploratory analysis on eBird data. I’ve picked up birdwatching as a hobby during quarantine, and eBird has a ton of <a href="https://ebird.org/data/download">cool data on bird sightings</a>.</p>
+<div id="setup" class="section level2">
+<h2>Setup</h2>
+<pre class="r"><code>library(tidyverse)
+library(lubridate)
+library(vroom)
+library(janitor)
+library(rebird)
+library(hrbrthemes)
+library(ggrepel)
+library(gganimate)
+library(widyr)
+library(tidygraph)
+library(ggraph)
+library(tidytext)
+
+options(scipen = 999, digits = 2)
+
+theme_set(theme_ipsum())
+
+set.seed(1234)</code></pre>
+</div>
+<div id="load-and-filter-data" class="section level2">
+<h2>Load and filter data</h2>
+<p>I downloaded data for bird sightings in Allegheny County from the eBird data portal. This code loads the data in R and prepares it for analysis.</p>
+<pre class="r"><code>df &lt;- vroom(&quot;data/ebird2/ebd_US-PA-003_201001_202003_relFeb-2020.zip&quot;, delim = &quot;\t&quot;) %&gt;% 
+  clean_names() %&gt;% 
+  mutate_at(vars(observer_id, locality, observation_date, time_observations_started, protocol_type), str_replace_na, &quot;NA&quot;) %&gt;% 
+  mutate(observation_date = ymd(observation_date),
+         observation_count_old = observation_count,
+         observation_count = as.numeric(str_replace(observation_count_old, &quot;X&quot;, as.character(NA))),
+         observation_event_id = str_c(observer_id, locality, observation_date, time_observations_started)) %&gt;% 
+  filter(all_species_reported == 1)</code></pre>
+<p>I will focus on the two major “types” of observation protocols. The others are related to specific birding events, and might not be representative of the overall data.</p>
+<pre class="r"><code>df_top_protocols &lt;- df %&gt;% 
+  count(protocol_type, sort = TRUE) %&gt;% 
+  slice(1:2)
+
+df_top_protocols</code></pre>
+<pre><code>## # A tibble: 2 x 2
+##   protocol_type      n
+##   &lt;chr&gt;          &lt;int&gt;
+## 1 Traveling     318714
+## 2 Stationary    178252</code></pre>
+<pre class="r"><code>df &lt;- df %&gt;% 
+  semi_join(df_top_protocols)</code></pre>
+<p>This shows that Allegheny County birders began submitting data regularly in 2016. I will focus my analysis on recent observations.</p>
+<pre class="r"><code>df %&gt;% 
+  count(observation_date) %&gt;% 
+  mutate(recent_observation = year(observation_date) &gt;= 2016,
+         observation_date = ymd(observation_date)) %&gt;% 
+  ggplot(aes(observation_date, n, color = recent_observation)) +
+    geom_line() +
+    scale_y_comma() +
+    scale_color_discrete(&quot;Recent Observation&quot;) +
+    labs(y = &quot;Number of observations&quot;,
+         x = &quot;Observation date&quot;)</code></pre>
+<p><img src="/post/2020-04-18-ebird-2_files/figure-html/unnamed-chunk-5-1.png" width="672" /></p>
+<pre class="r"><code>df &lt;- df %&gt;% 
+  filter(year(observation_date) &gt;= 2016)</code></pre>
+<p>There is wide variation in the number of times a species was sighted in a given observation.</p>
+<pre class="r"><code>df %&gt;% 
+  ggplot(aes(observation_count, group = common_name)) +
+    geom_density() +
+    scale_x_log10() +
+    labs(x = &quot;Species count (log10)&quot;)</code></pre>
+<p><img src="/post/2020-04-18-ebird-2_files/figure-html/unnamed-chunk-7-1.png" width="672" /></p>
+<p>This calculates the 99th percentile of bird count per observation, and highlights the birds that are seen in large flocks.</p>
+<pre class="r"><code>df %&gt;% 
+  group_by(common_name) %&gt;% 
+  summarize(observation_count_99 = quantile(observation_count, probs = c(.99), na.rm = TRUE)) %&gt;% 
+  arrange(desc(observation_count_99))</code></pre>
+<pre><code>## # A tibble: 292 x 2
+##    common_name       observation_count_99
+##    &lt;chr&gt;                            &lt;dbl&gt;
+##  1 Ring-billed Gull                 4437.
+##  2 crow sp.                         2000 
+##  3 gull sp.                          696.
+##  4 Tundra Swan                       231.
+##  5 European Starling                 200 
+##  6 Herring Gull                      200 
+##  7 Canada Goose                      148 
+##  8 Common Nighthawk                  142.
+##  9 blackbird sp.                     103.
+## 10 Mallard                           101.
+## # … with 282 more rows</code></pre>
+<p>This shows that the high count of Ring-billed Gulls is explained by groups of birders seeing flocks of thousands of the species. This also highlights that the same bird sighting can be counted twice because of simultaneous observation.</p>
+<pre class="r"><code>df %&gt;% 
+  filter(common_name == &quot;Ring-billed Gull&quot;) %&gt;% 
+  arrange(desc(observation_count)) %&gt;% 
+  slice(1:10) %&gt;% 
+  select(observer_id, group_identifier, common_name, observation_date, duration_minutes, observation_count, locality)</code></pre>
+<pre><code>## # A tibble: 10 x 7
+##    observer_id group_identifier common_name observation_date duration_minutes
+##    &lt;chr&gt;       &lt;chr&gt;            &lt;chr&gt;       &lt;date&gt;                      &lt;dbl&gt;
+##  1 obsr160352  G2943178         Ring-bille… 2018-02-13                     38
+##  2 obsr40545   G2943178         Ring-bille… 2018-02-13                     38
+##  3 obsr40545   G2930894         Ring-bille… 2018-02-09                     50
+##  4 obsr160352  G2930894         Ring-bille… 2018-02-09                     75
+##  5 obsr160352  &lt;NA&gt;             Ring-bille… 2016-01-29                     25
+##  6 obsr160352  G1578214         Ring-bille… 2016-01-30                     71
+##  7 obsr101818  G1578214         Ring-bille… 2016-01-30                     71
+##  8 obsr40545   G2940041         Ring-bille… 2018-02-12                     55
+##  9 obsr160352  &lt;NA&gt;             Ring-bille… 2018-02-10                     55
+## 10 obsr620338  G2940041         Ring-bille… 2018-02-12                     55
+## # … with 2 more variables: observation_count &lt;dbl&gt;, locality &lt;chr&gt;</code></pre>
+</div>
+<div id="species-counts" class="section level2">
+<h2>Species counts</h2>
+<p>This does a basic count of the major species, not accounting for simultaneous observation:</p>
+<pre class="r"><code>df_counts &lt;- df %&gt;% 
+  group_by(common_name) %&gt;% 
+  summarize(species_count = sum(observation_count, na.rm = TRUE)) %&gt;% 
+  arrange(desc(species_count))
+
+df_counts</code></pre>
+<pre><code>## # A tibble: 292 x 2
+##    common_name       species_count
+##    &lt;chr&gt;                     &lt;dbl&gt;
+##  1 Ring-billed Gull         216490
+##  2 European Starling        151465
+##  3 American Crow            143783
+##  4 Canada Goose             124268
+##  5 American Robin           114062
+##  6 Mallard                   78072
+##  7 Northern Cardinal         68276
+##  8 Mourning Dove             56251
+##  9 Common Grackle            51649
+## 10 Blue Jay                  49700
+## # … with 282 more rows</code></pre>
+<pre class="r"><code>df_counts %&gt;% 
+  mutate(common_name = fct_reorder(common_name, species_count)) %&gt;% 
+  slice(1:20) %&gt;% 
+  ggplot(aes(species_count, common_name)) +
+    geom_col() +
+    scale_x_comma() +
+    labs(x = &quot;Observations&quot;,
+         y = NULL)</code></pre>
+<p><img src="/post/2020-04-18-ebird-2_files/figure-html/unnamed-chunk-11-1.png" width="672" /></p>
+</div>
+<div id="species-correlations" class="section level2">
+<h2>Species correlations</h2>
+<p>I was interested in which birds are correlated most with two common and popular birds, the Cardinal and the Blue Jay. This calculates the pairwise correlation and plots the top 10 birds correlated with the two target species:</p>
+<pre class="r"><code>species_list &lt;- c(&quot;Northern Cardinal&quot;, &quot;Blue Jay&quot;)</code></pre>
+<pre class="r"><code>df_pair_corr &lt;- df %&gt;% 
+  pairwise_cor(common_name, observation_event_id, diag = FALSE, upper = FALSE)</code></pre>
+<pre class="r"><code>df_pair_corr %&gt;% 
+  filter(item1 %in% species_list) %&gt;% 
+  drop_na(correlation) %&gt;% 
+  arrange(item1, desc(correlation)) %&gt;% 
+  group_by(item1) %&gt;% 
+  slice(1:10) %&gt;% 
+  ungroup() %&gt;% 
+  mutate(item2 = reorder_within(x = item2, by = correlation, within = item1)) %&gt;% 
+  ggplot(aes(correlation, item2, fill = item1)) +
+    geom_col(alpha = .9) +
+    facet_wrap(~item1, scales = &quot;free_y&quot;) +
+    scale_y_reordered() +
+    scale_fill_manual(values = c(&quot;blue&quot;, &quot;red&quot;)) +
+    guides(fill = FALSE) +
+    labs(x = &quot;Correlation&quot;,
+         y = NULL)</code></pre>
+<p><img src="/post/2020-04-18-ebird-2_files/figure-html/unnamed-chunk-14-1.png" width="960" /></p>
+<p>Cardinals and Blue Jays share many birds in common, but there are some distinctions, and the level of correlation can vary. I use a slopegraph to show the difference in how much a bird is correlated with Blue Jays vs. Cardinals.</p>
+<p>This grabs the data for the two target species and gets the top 20 correlated birds for each species:</p>
+<pre class="r"><code>df_slopegraph &lt;- df_pair_corr %&gt;% 
+  filter(item1 %in% species_list) %&gt;% 
+  drop_na(correlation) %&gt;% 
+  arrange(item1, desc(correlation)) %&gt;% 
+  group_by(item1) %&gt;% 
+  slice(1:20) %&gt;% 
+  ungroup()</code></pre>
+<p>This calculates the difference in correlation for each bird:</p>
+<pre class="r"><code>df_corr_diff &lt;- df_slopegraph %&gt;% 
+  pivot_wider(names_from = item1, values_from = correlation, names_prefix = &quot;corr_&quot;) %&gt;% 
+  clean_names() %&gt;% 
+  mutate(corr_diff = abs(corr_blue_jay - corr_northern_cardinal)) %&gt;% 
+  select(item2, corr_diff)
+
+df_corr_diff</code></pre>
+<pre><code>## # A tibble: 29 x 2
+##    item2                   corr_diff
+##    &lt;chr&gt;                       &lt;dbl&gt;
+##  1 Tufted Titmouse            0.0258
+##  2 Carolina Wren             NA     
+##  3 Northern Cardinal         NA     
+##  4 Red-bellied Woodpecker     0.0151
+##  5 White-breasted Nuthatch    0.0143
+##  6 Downy Woodpecker          NA     
+##  7 Song Sparrow               0.121 
+##  8 Northern Flicker           0.0245
+##  9 Mourning Dove             NA     
+## 10 Eastern Towhee            NA     
+## # … with 19 more rows</code></pre>
+<pre class="r"><code>df_slopegraph %&gt;% 
+  left_join(df_corr_diff) %&gt;% 
+  ggplot(aes(item1, correlation)) +
+    geom_line(aes(group = item2, color = corr_diff), size = 2) +
+    geom_point(size = 2) +
+    geom_text_repel(data = filter(df_slopegraph, item1 == species_list[2]),
+                    aes(y = correlation, label = item2), direction = &quot;both&quot;, nudge_x = -.3, segment.alpha = .2) +
+    geom_text_repel(data = filter(df_slopegraph, item1 == species_list[1]),
+                    aes(y = correlation, label = item2), direction = &quot;both&quot;, nudge_x = .3, segment.alpha = .2) +
+    scale_color_viridis_c(&quot;Absolute difference in correlation&quot;) +
+    labs(x = NULL,
+         y = &quot;Correlation&quot;) +
+    theme(panel.grid.minor.y = element_blank(),
+          panel.grid.major.y = element_blank(),
+          axis.title.x = element_blank())</code></pre>
+<p><img src="/post/2020-04-18-ebird-2_files/figure-html/unnamed-chunk-17-1.png" width="1536" /></p>
+</div>
+<div id="network-graph" class="section level2">
+<h2>Network Graph</h2>
+<p>Network graphs are fun ways to show counts or correlations between groups. Since birds often exist in distinct environments and vary by season, graph analysis should be able to visualize connections.</p>
+<p>This takes the top 100 birds in terms of total count and makes a network graph object consisting of nodes and edges.</p>
+<pre class="r"><code>graph_object_corr &lt;- df_pair_corr %&gt;% 
+  semi_join(df_counts %&gt;% slice(1:75), by = c(&quot;item1&quot; = &quot;common_name&quot;)) %&gt;% 
+  semi_join(df_counts %&gt;% slice(1:75), by = c(&quot;item2&quot; = &quot;common_name&quot;)) %&gt;% 
+  as_tbl_graph(directed = FALSE) %&gt;% 
+  activate(nodes) %&gt;% 
+  filter(!node_is_isolated()) %&gt;% 
+  activate(edges) %&gt;% 
+  filter(abs(correlation) &gt;= .05) %&gt;% 
+  activate(nodes) %&gt;% 
+  filter(!node_is_isolated()) %&gt;% 
+  left_join(df_counts, by = c(&quot;name&quot; = &quot;common_name&quot;))
+
+graph_object_corr</code></pre>
+<pre><code>## # A tbl_graph: 74 nodes and 1921 edges
+## #
+## # An undirected simple graph with 1 component
+## #
+## # Node Data: 74 x 2 (active)
+##   name                   species_count
+##   &lt;chr&gt;                          &lt;dbl&gt;
+## 1 American Crow                 143783
+## 2 American Goldfinch             41307
+## 3 American Robin                114062
+## 4 Belted Kingfisher               2035
+## 5 Black-capped Chickadee          9520
+## 6 Blue Jay                       49700
+## # … with 68 more rows
+## #
+## # Edge Data: 1,921 x 3
+##    from    to correlation
+##   &lt;int&gt; &lt;int&gt;       &lt;dbl&gt;
+## 1     1     2       0.279
+## 2     1     3       0.287
+## 3     2     3       0.406
+## # … with 1,918 more rows</code></pre>
+<p>This plots the network graph to show all the connections that fit the criteria in the code above:</p>
+<pre class="r"><code>plot &lt;- graph_object_corr %&gt;% 
+    ggraph() +
+    geom_edge_link(aes(width = correlation, alpha = correlation)) +
+    geom_node_point(aes(size = species_count, alpha = species_count)) +
+    scale_size_continuous(&quot;Total observations&quot;, labels = scales::comma) +
+    scale_alpha_continuous(&quot;Total observations&quot;, labels = scales::comma) +
+    scale_edge_alpha(&quot;Observations together&quot;, range = c(.01, .3)) +
+    scale_edge_width(&quot;Observations together&quot;, range = c(.1, 2)) +
+    theme_void()
+
+plot</code></pre>
+<p><img src="/post/2020-04-18-ebird-2_files/figure-html/unnamed-chunk-19-1.png" width="960" /></p>
+<p>There is a dense group of birds that are highly correlated with each other. This high correlation could be caused by a shared environment or seasonal migration patterns.</p>
+<div id="highlight-species" class="section level3">
+<h3>Highlight species</h3>
+<p>I also wanted to be able to see where a given species fits in the network graph. This code prepares a network graph object and filters out species that are not highly connected to the main group.</p>
+<pre class="r"><code>graph_object_corr &lt;- df_pair_corr %&gt;% 
+  as_tbl_graph(directed = FALSE) %&gt;% 
+  activate(edges) %&gt;% 
+  filter(abs(correlation) &gt; .2) %&gt;% 
+  activate(nodes) %&gt;% 
+  mutate(centrality = centrality_authority()) %&gt;% 
+  filter(centrality &gt; .01) %&gt;% 
+  filter(!node_is_isolated())</code></pre>
+<p>This code identifies the node ID for the Northern Cardinal and makes a dataframe I will use to filter with in the next code chunk.</p>
+<pre class="r"><code>species_list &lt;- c(&quot;Northern Cardinal&quot;)
+
+df_species_corr_nodes &lt;- graph_object_corr %&gt;% 
+  activate(nodes) %&gt;% 
+  as_tibble() %&gt;% 
+  mutate(node_id = row_number()) %&gt;% 
+  filter(name %in% species_list)</code></pre>
+<p>This code identifes which node is the Northern Cardinal, and which edges connect to the Northern Cardinal. This identifies all the species that are connected to the bird, given the criteria I set above.</p>
+<pre class="r"><code>plot_corr &lt;- graph_object_corr %&gt;% 
+  activate(nodes) %&gt;% 
+  mutate(name_label = case_when(name %in% species_list ~ name,
+                                TRUE ~ as.character(NA))) %&gt;% 
+  activate(edges) %&gt;% 
+  left_join(df_species_corr_nodes, by = c(&quot;from&quot; = &quot;node_id&quot;)) %&gt;% 
+  left_join(df_species_corr_nodes, by = c(&quot;to&quot; = &quot;node_id&quot;)) %&gt;% 
+  mutate(name =  coalesce(name.x, name.y),
+         centrality = coalesce(centrality.x, centrality.y)) %&gt;%
+  select(from, to, name, centrality) %&gt;% 
+  mutate(species_flag = case_when(from %in% df_species_corr_nodes$node_id | to %in% df_species_corr_nodes$node_id ~ TRUE,
+                                  TRUE ~ FALSE),
+         name = case_when(is.na(name) ~ &quot;Other species&quot;,
+                          TRUE ~ name)) %&gt;%
+  ggraph() +
+    geom_edge_link(aes(alpha = species_flag, width = species_flag)) +
+    geom_node_point(aes(shape = !is.na(name_label), size = !is.na(name_label), color = name_label)) +
+    geom_node_label(aes(label = name_label, color = name_label), repel =  TRUE) +
+    scale_edge_width_manual(values = c(.3, 1)) +
+    scale_edge_alpha_discrete(range = c(0.1, .5)) +
+    scale_shape_manual(values = c(1, 19)) +
+    scale_size_manual(values = c(2, 3)) +
+    guides(edge_alpha = FALSE,
+           edge_width = FALSE,
+           size = FALSE,
+           shape = FALSE,
+           color = FALSE) +
+    theme_void()
+
+plot_corr</code></pre>
+<p><img src="/post/2020-04-18-ebird-2_files/figure-html/unnamed-chunk-22-1.png" width="960" /></p>
+</div>
+</div>

@@ -1,1 +1,0 @@
-# blog_hugo_academic

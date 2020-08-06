@@ -1,0 +1,230 @@
+---
+title: Graphing Allegheny County COVID-19 data
+author: Conor Tompkins
+date: '2020-07-07'
+slug: graphing-allegheny-county-covid-19-data
+categories:
+  - R
+tags:
+  - COVID
+  - Allegheny County
+---
+
+
+
+<p>In this post, I review the process I use to make daily graphs from data published by the <a href="https://www.alleghenycounty.us/Health-Department/Resources/COVID-19/COVID-19.aspx">Allegheny County Health Department</a>. I use the <a href="https://github.com/FranklinChen/covid-19-allegheny-county">data posted by Franklin Chen</a>, who scrapes the data from the County’s email updates.</p>
+<p>This is the final graph:
+<img src="/post/2020-07-07-graphing-allegheny-county-covid-19-data_files/ac_county_timline.png" style="width:80.0%;height:80.0%" /></p>
+<p>First, load the required packages and set up the environment.</p>
+<pre class="r"><code>#load libraries
+library(tidyverse)
+library(lubridate)
+library(tidyquant)
+library(hrbrthemes)
+
+#settings
+theme_set(theme_ipsum(base_size = 15, strip_text_size = 15, axis_title_size = 15))
+
+options(scipen = 999, digits = 4)</code></pre>
+<p>This reads in the raw data from the <a href="https://github.com/FranklinChen/covid-19-allegheny-county">GitHub repository</a>.</p>
+<pre class="r"><code>#read in data
+df &lt;- read_csv(&quot;https://raw.githubusercontent.com/FranklinChen/covid-19-allegheny-county/master/covid-19-allegheny-county.csv&quot;) %&gt;% 
+  mutate(state = &quot;Pennsylvania&quot;,
+         county = &quot;Allegheny County&quot;)
+
+glimpse(df)</code></pre>
+<pre><code>## Rows: 153
+## Columns: 6
+## $ date             &lt;date&gt; 2020-03-04, 2020-03-05, 2020-03-06, 2020-03-07, 202…
+## $ cases            &lt;dbl&gt; 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 4, 6, 10, 12, 18, 28, …
+## $ hospitalizations &lt;dbl&gt; 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4…
+## $ deaths           &lt;dbl&gt; 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1…
+## $ state            &lt;chr&gt; &quot;Pennsylvania&quot;, &quot;Pennsylvania&quot;, &quot;Pennsylvania&quot;, &quot;Pen…
+## $ county           &lt;chr&gt; &quot;Allegheny County&quot;, &quot;Allegheny County&quot;, &quot;Allegheny C…</code></pre>
+<p>On July 7th, the County added deaths that occurred between April and June, but marked them as reported on July 7th. For the purposes of visualization, I remove those deaths.</p>
+<pre class="r"><code>#remove deaths from July 7th
+#The deaths reported today are from the state’s use of the Electronic Data Reporting System (EDRS) and include #deaths from April 5 – June 13, all decedents were 65 or older.
+#https://twitter.com/HealthAllegheny/status/1280517051589722117?s=20
+
+df &lt;- df %&gt;% 
+  mutate(deaths = case_when(date == &quot;2020-07-07&quot; ~ NA_real_,
+                            date != &quot;2020-07-07&quot; ~ deaths))</code></pre>
+<p>This calculates new cases, hospitalizations, and deaths.</p>
+<pre class="r"><code>df &lt;- df %&gt;% 
+  mutate(cases_new = cases - lag(cases),
+         hospitalizations_new = hospitalizations - lag(hospitalizations),
+         deaths_new = deaths - lag(deaths))</code></pre>
+<p>There are instances where the number of cumulative hospitalizations or deaths <em>decreases</em>.</p>
+<pre class="r"><code>df %&gt;% 
+  mutate(hospitalizations_lag = lag(hospitalizations)) %&gt;% 
+  select(date, date, hospitalizations, hospitalizations_lag, hospitalizations_new) %&gt;% 
+  filter(hospitalizations_new &lt; 0)</code></pre>
+<pre><code>## # A tibble: 3 x 4
+##   date       hospitalizations hospitalizations_lag hospitalizations_new
+##   &lt;date&gt;                &lt;dbl&gt;                &lt;dbl&gt;                &lt;dbl&gt;
+## 1 2020-04-27              213                  214                   -1
+## 2 2020-05-01              235                  236                   -1
+## 3 2020-05-14              283                  285                   -2</code></pre>
+<pre class="r"><code>df %&gt;% 
+  mutate(deaths_lag = lag(deaths)) %&gt;% 
+  select(date, date, deaths, deaths_lag, deaths_new) %&gt;% 
+  filter(deaths_new &lt; 0)</code></pre>
+<pre><code>## # A tibble: 2 x 4
+##   date       deaths deaths_lag deaths_new
+##   &lt;date&gt;      &lt;dbl&gt;      &lt;dbl&gt;      &lt;dbl&gt;
+## 1 2020-04-23     69         74         -5
+## 2 2020-04-29     86         87         -1</code></pre>
+<p>In these cases, I remove the values and do not replace them.</p>
+<pre class="r"><code>#when new cases/hospitalizations/deaths is negative, replace with NA
+df &lt;- df %&gt;% 
+  mutate(cases_new = case_when(cases_new &lt; 0 ~ NA_real_,
+                               cases_new &gt;= 0 ~ cases_new),
+         hospitalizations_new = case_when(hospitalizations_new &lt; 0 ~ NA_real_,
+                                          hospitalizations_new &gt;= 0 ~ hospitalizations_new),
+         deaths_new = case_when(deaths_new &lt; 0 ~ NA_real_,
+                                deaths_new &gt;= 0 ~ deaths_new))</code></pre>
+<p>This calculates rolling 14-day averages for new cases/hospitalizations/deaths.</p>
+<pre class="r"><code>#calculate rolling 14 day averages for cases/hospitalizations/deaths
+df &lt;- df %&gt;% 
+  tq_mutate(
+    # tq_mutate args
+    select     = cases_new,
+    mutate_fun = rollapply, 
+    # rollapply args
+    width      = 14,
+    align      = &quot;right&quot;,
+    FUN        = mean,
+    # mean args
+    na.rm      = TRUE,
+    # tq_mutate args
+    col_rename = &quot;cases_new_rolling_14&quot;
+  ) %&gt;% 
+  tq_mutate(
+    # tq_mutate args
+    select     = hospitalizations_new,
+    mutate_fun = rollapply, 
+    # rollapply args
+    width      = 14,
+    align      = &quot;right&quot;,
+    FUN        = mean,
+    # mean args
+    na.rm      = TRUE,
+    # tq_mutate args
+    col_rename = &quot;hospitalizations_new_rolling_14&quot;
+  ) %&gt;% 
+  tq_mutate(
+    # tq_mutate args
+    select     = deaths_new,
+    mutate_fun = rollapply, 
+    # rollapply args
+    width      = 14,
+    align      = &quot;right&quot;,
+    FUN        = mean,
+    # mean args
+    na.rm      = TRUE,
+    # tq_mutate args
+    col_rename = &quot;deaths_new_rolling_14&quot;
+  ) %&gt;% 
+  select(state, county, date, contains(&quot;_new&quot;), contains(&quot;rolling&quot;))
+
+glimpse(df)</code></pre>
+<pre><code>## Rows: 153
+## Columns: 9
+## $ state                           &lt;chr&gt; &quot;Pennsylvania&quot;, &quot;Pennsylvania&quot;, &quot;Penn…
+## $ county                          &lt;chr&gt; &quot;Allegheny County&quot;, &quot;Allegheny County…
+## $ date                            &lt;date&gt; 2020-03-04, 2020-03-05, 2020-03-06, …
+## $ cases_new                       &lt;dbl&gt; NA, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, …
+## $ hospitalizations_new            &lt;dbl&gt; NA, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, …
+## $ deaths_new                      &lt;dbl&gt; NA, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, …
+## $ cases_new_rolling_14            &lt;dbl&gt; NA, NA, NA, NA, NA, NA, NA, NA, NA, N…
+## $ hospitalizations_new_rolling_14 &lt;dbl&gt; NA, NA, NA, NA, NA, NA, NA, NA, NA, N…
+## $ deaths_new_rolling_14           &lt;dbl&gt; NA, NA, NA, NA, NA, NA, NA, NA, NA, N…</code></pre>
+<p>To prepare the data for visualization in <code>ggplot2</code>, I pivot the rolling averages longer and move them into a separate table.</p>
+<pre class="r"><code>#pivot rolling average data longer
+df_rolling &lt;- df %&gt;% 
+  select(state, county, date, contains(&quot;rolling&quot;)) %&gt;% 
+  pivot_longer(cols = contains(&quot;rolling&quot;), names_to = &quot;metric&quot;) %&gt;% 
+  mutate(metric = case_when(str_detect(metric, &quot;cases&quot;) ~ &quot;New cases&quot;,
+                            str_detect(metric, &quot;deaths&quot;) ~ &quot;New deaths&quot;,
+                            str_detect(metric, &quot;hospitalizations&quot;) ~ &quot;New hospitalizations&quot;)) %&gt;% 
+  mutate(metric = factor(metric, levels = c(&quot;New cases&quot;, &quot;New hospitalizations&quot;, &quot;New deaths&quot;)))
+
+glimpse(df_rolling)</code></pre>
+<pre><code>## Rows: 459
+## Columns: 5
+## $ state  &lt;chr&gt; &quot;Pennsylvania&quot;, &quot;Pennsylvania&quot;, &quot;Pennsylvania&quot;, &quot;Pennsylvania&quot;…
+## $ county &lt;chr&gt; &quot;Allegheny County&quot;, &quot;Allegheny County&quot;, &quot;Allegheny County&quot;, &quot;A…
+## $ date   &lt;date&gt; 2020-03-04, 2020-03-04, 2020-03-04, 2020-03-05, 2020-03-05, 2…
+## $ metric &lt;fct&gt; New cases, New hospitalizations, New deaths, New cases, New ho…
+## $ value  &lt;dbl&gt; NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA…</code></pre>
+<p>I do the same for the daily data.</p>
+<pre class="r"><code>#pivot daily data longer
+df_new &lt;- df %&gt;% 
+  select(state, county, date, !contains(&quot;rolling&quot;)) %&gt;% 
+  pivot_longer(cols = contains(&quot;_new&quot;), names_to = &quot;metric&quot;) %&gt;% 
+  mutate(metric = case_when(str_detect(metric, &quot;cases&quot;) ~ &quot;New cases&quot;,
+                            str_detect(metric, &quot;deaths&quot;) ~ &quot;New deaths&quot;,
+                            str_detect(metric, &quot;hospitalizations&quot;) ~ &quot;New hospitalizations&quot;)) %&gt;% 
+  mutate(metric = factor(metric, levels = c(&quot;New cases&quot;, &quot;New hospitalizations&quot;, &quot;New deaths&quot;)))
+
+glimpse(df_new)</code></pre>
+<pre><code>## Rows: 459
+## Columns: 5
+## $ state  &lt;chr&gt; &quot;Pennsylvania&quot;, &quot;Pennsylvania&quot;, &quot;Pennsylvania&quot;, &quot;Pennsylvania&quot;…
+## $ county &lt;chr&gt; &quot;Allegheny County&quot;, &quot;Allegheny County&quot;, &quot;Allegheny County&quot;, &quot;A…
+## $ date   &lt;date&gt; 2020-03-04, 2020-03-04, 2020-03-04, 2020-03-05, 2020-03-05, 2…
+## $ metric &lt;fct&gt; New cases, New hospitalizations, New deaths, New cases, New ho…
+## $ value  &lt;dbl&gt; NA, NA, NA, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,…</code></pre>
+<p>In the daily data, I remove rows where the date is <em>before</em> the first non-zero value of that metric.</p>
+<pre class="r"><code>#identify first non-zero value in each metric.
+##filter out rows before first non-zero value
+df_new &lt;- df_new %&gt;% 
+  arrange(state, county, metric, date) %&gt;% 
+  group_by(state, county, metric) %&gt;% 
+  filter(row_number() != 1) %&gt;% 
+  mutate(first_non_zero_value = cumsum(coalesce(value, 0) &gt; 0) &gt;= 1) %&gt;% 
+  ungroup() %&gt;% 
+  filter(first_non_zero_value == TRUE)</code></pre>
+<p>These graphs show the rolling and daily new data:</p>
+<pre class="r"><code>#preview rolling data
+df_rolling %&gt;% 
+  ggplot(aes(date, value)) +
+  geom_line() +
+  facet_wrap(~metric, ncol = 1, scales = &quot;free_y&quot;)</code></pre>
+<p><img src="/post/2020-07-07-graphing-allegheny-county-covid-19-data_files/figure-html/unnamed-chunk-12-1.png" width="960" /></p>
+<pre class="r"><code>#preview daily data
+df_new %&gt;% 
+  ggplot(aes(date, value)) +
+  geom_point() +
+  facet_wrap(~metric, ncol = 1, scales = &quot;free_y&quot;)</code></pre>
+<p><img src="/post/2020-07-07-graphing-allegheny-county-covid-19-data_files/figure-html/unnamed-chunk-13-1.png" width="960" /></p>
+<p>This finds the most recent date in the data, which I insert into the final graph.</p>
+<pre class="r"><code>#find most recent date
+last_updated &lt;- last(df_rolling$date)</code></pre>
+<p>This creates the final graph. Since I pivoted the data longer, I can facet by <code>metric</code>, which lets me show cases/hospitalizations/deaths on separate y axes. I insert colored rectanges behind the data to show the stages of state intervention.</p>
+<pre class="r"><code>#make graph
+allegheny_county_timeline &lt;- df_rolling %&gt;% 
+  filter(!is.na(value)) %&gt;% 
+  ggplot(aes(x = date, y = value)) +
+  #create colored rectangles showing various government intervention timelines
+  annotate(geom = &quot;rect&quot;, xmin = ymd(&quot;2020-03-23&quot;), xmax = ymd(&quot;2020-05-15&quot;), ymin = as.Date(-Inf), ymax = as.Date(Inf), 
+           fill = &quot;red&quot;, alpha = .3) +
+  annotate(geom = &quot;rect&quot;, xmin = ymd(&quot;2020-05-15&quot;), xmax = ymd(&quot;2020-06-05&quot;), ymin = as.Date(-Inf), ymax = as.Date(Inf), 
+           fill = &quot;yellow&quot;, alpha = .3) +
+  annotate(geom = &quot;rect&quot;, xmin = ymd(&quot;2020-06-05&quot;), xmax = ymd(&quot;2020-06-28&quot;), ymin = as.Date(-Inf), ymax = as.Date(Inf), 
+           fill = &quot;green&quot;, alpha = .3) +
+  annotate(geom = &quot;rect&quot;, xmin = ymd(&quot;2020-06-28&quot;), xmax = as.Date(Inf), ymin = as.Date(-Inf), ymax = as.Date(Inf),
+           fill = &quot;#aaff00&quot;, alpha = .3) +
+  #plot daily data as points, rolling average as lines
+  geom_point(data = df_new, aes(y = value), alpha = .3)+
+  geom_line(size = 1.5) +
+  #facet by metric
+  facet_wrap(~metric, ncol = 1, scales = &quot;free_y&quot;) +
+  labs(title = str_c(&quot;Allegheny County COVID-19 response timeline (last updated &quot;, last_updated, &quot;)&quot;),
+       x = NULL,
+       y = NULL,
+       subtitle = &quot;14-day rolling average&quot;,
+       caption = &quot;@conor_tompkins, data from Allegheny County via Franklin Chen&quot;)
+
+allegheny_county_timeline</code></pre>
+<p><img src="/post/2020-07-07-graphing-allegheny-county-covid-19-data_files/figure-html/unnamed-chunk-15-1.png" width="960" /></p>
