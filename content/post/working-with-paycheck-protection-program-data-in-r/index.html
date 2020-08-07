@@ -1,0 +1,342 @@
+---
+title: Working with Paycheck Protection Program data in R
+author: Conor Tompkins
+date: '2020-07-08'
+slug: working-with-paycheck-protection-program-data-in-r
+image:
+  caption: ""
+  focal_point: ""
+  preview_only: false
+categories:
+  - R
+  - politics
+tags:
+  - COVID
+---
+
+
+
+<p>In this post, I walk through the process of reading in the data from the Paycheck Protection Program, and show some basic analyses that can be done.</p>
+<p>Load packages and set up environment:</p>
+<pre class="r"><code>library(tidyverse)
+library(sf)
+library(tigris)
+library(lubridate)
+library(janitor)
+library(hrbrthemes)
+
+theme_set(theme_ipsum(base_size = 18))
+
+options(scipen = 999, digits = 4)</code></pre>
+<div id="load-and-clean-data" class="section level2">
+<h2>Load and clean data</h2>
+<p>The data is available at this site: <a href="https://home.treasury.gov/policy-issues/cares-act/assistance-for-small-businesses/sba-paycheck-protection-program-loan-level-data" class="uri">https://home.treasury.gov/policy-issues/cares-act/assistance-for-small-businesses/sba-paycheck-protection-program-loan-level-data</a></p>
+<p>The data exists in numerous CSV files, separated by state and sometimes loan amount.</p>
+<p>This code chunk identifies all the CSV files in the folder, reads them in, and combines them.</p>
+<pre class="r"><code>path &lt;- &quot;data/ppp&quot;
+
+#find all files in the folder that end in .csv
+ppp &lt;- list.files(path, full.names = TRUE, recursive = TRUE) %&gt;% 
+  keep(str_detect(., &quot;.csv$&quot;)) %&gt;% 
+  #read each file with read_csv and combine them
+  set_names() %&gt;% 
+  map_dfr(read_csv, col_types = cols(.default = &quot;c&quot;), .id = &quot;file_name&quot;) %&gt;% 
+  clean_names()
+
+glimpse(ppp)</code></pre>
+<pre><code>## Rows: 4,885,388
+## Columns: 18
+## $ file_name      &lt;chr&gt; &quot;data/ppp/All Data by State/150k plus/foia_150k_plus.c…
+## $ loan_range     &lt;chr&gt; &quot;a $5-10 million&quot;, &quot;a $5-10 million&quot;, &quot;a $5-10 million…
+## $ business_name  &lt;chr&gt; &quot;ARCTIC SLOPE NATIVE ASSOCIATION, LTD.&quot;, &quot;CRUZ CONSTRU…
+## $ address        &lt;chr&gt; &quot;7000 Uula St&quot;, &quot;7000 East Palmer Wasilla Hwy&quot;, &quot;2606 …
+## $ city           &lt;chr&gt; &quot;BARROW&quot;, &quot;PALMER&quot;, &quot;ANCHORAGE&quot;, &quot;ANCHORAGE&quot;, &quot;PALMER&quot;…
+## $ state          &lt;chr&gt; &quot;AK&quot;, &quot;AK&quot;, &quot;AK&quot;, &quot;AK&quot;, &quot;AK&quot;, &quot;AK&quot;, &quot;AK&quot;, &quot;AK&quot;, &quot;AK&quot;, …
+## $ zip            &lt;chr&gt; &quot;99723&quot;, &quot;99645&quot;, &quot;99503&quot;, &quot;99515&quot;, &quot;99645&quot;, &quot;99503&quot;, …
+## $ naics_code     &lt;chr&gt; &quot;813920&quot;, &quot;238190&quot;, &quot;722310&quot;, &quot;621111&quot;, &quot;517311&quot;, &quot;541…
+## $ business_type  &lt;chr&gt; &quot;Non-Profit Organization&quot;, &quot;Subchapter S Corporation&quot;,…
+## $ race_ethnicity &lt;chr&gt; &quot;Unanswered&quot;, &quot;Unanswered&quot;, &quot;Unanswered&quot;, &quot;Unanswered&quot;…
+## $ gender         &lt;chr&gt; &quot;Unanswered&quot;, &quot;Unanswered&quot;, &quot;Unanswered&quot;, &quot;Unanswered&quot;…
+## $ veteran        &lt;chr&gt; &quot;Unanswered&quot;, &quot;Unanswered&quot;, &quot;Unanswered&quot;, &quot;Unanswered&quot;…
+## $ non_profit     &lt;chr&gt; &quot;Y&quot;, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, N…
+## $ jobs_retained  &lt;chr&gt; &quot;295&quot;, &quot;215&quot;, &quot;367&quot;, &quot;0&quot;, &quot;267&quot;, &quot;231&quot;, &quot;298&quot;, &quot;439&quot;, …
+## $ date_approved  &lt;chr&gt; &quot;04/14/2020&quot;, &quot;04/15/2020&quot;, &quot;04/11/2020&quot;, &quot;04/29/2020&quot;…
+## $ lender         &lt;chr&gt; &quot;National Cooperative Bank, National Association&quot;, &quot;Fi…
+## $ cd             &lt;chr&gt; &quot;AK - 00&quot;, &quot;AK - 00&quot;, &quot;AK - 00&quot;, &quot;AK - 00&quot;, &quot;AK - 00&quot;,…
+## $ loan_amount    &lt;chr&gt; NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA…</code></pre>
+<p>This changes how the columns are interpreted, and separates the congressional district column into state and district. If the <code>district</code> value is blank, I replace it with <code>NA</code>.</p>
+<pre class="r"><code>ppp &lt;- ppp %&gt;% 
+  mutate(jobs_retained = as.numeric(jobs_retained),
+         date_approved = mdy(date_approved),
+         loan_amount = as.numeric(loan_amount),
+         file_name = str_remove(file_name, path)) %&gt;% 
+  #separate cd column into state_2 and district
+  separate(cd, into = c(&quot;state_2&quot;, &quot;district&quot;), remove = FALSE) %&gt;% 
+  #when district is blank, replace with NA
+  mutate(district = case_when(district == &quot;&quot; ~ NA_character_,
+                          district != &quot;&quot; ~ district)) %&gt;% 
+  mutate(loan_range = str_trim(loan_range),
+         loan_range = str_sub(loan_range, 3, str_length(loan_range)),
+         loan_range = case_when(!str_detect(file_name, &quot;150k plus&quot;) ~ &quot;Under $150k&quot;,
+                                TRUE ~ loan_range))</code></pre>
+<p>There are cases where the value in the <code>state</code> column doesn’t match the state embedded in the congressional district <code>cd</code> column.</p>
+<pre class="r"><code>#preview data where state doesn&#39;t match congressional district
+ppp %&gt;% 
+  filter(file_name == &quot;/All Data by State/Virginia/foia_up_to_150k_VA.csv&quot;) %&gt;% 
+  count(file_name, state, cd, state_2, sort = TRUE) %&gt;% 
+  mutate(flag_match = state == state_2) %&gt;% 
+  filter(flag_match == FALSE) %&gt;% 
+  slice(1:5)</code></pre>
+<pre><code>## # A tibble: 5 x 6
+##   file_name                                state cd     state_2     n flag_match
+##   &lt;chr&gt;                                    &lt;chr&gt; &lt;chr&gt;  &lt;chr&gt;   &lt;int&gt; &lt;lgl&gt;     
+## 1 /All Data by State/Virginia/foia_up_to_… VA    GA - … GA          1 FALSE     
+## 2 /All Data by State/Virginia/foia_up_to_… VA    MD - … MD          1 FALSE     
+## 3 /All Data by State/Virginia/foia_up_to_… VA    NC - … NC          1 FALSE     
+## 4 /All Data by State/Virginia/foia_up_to_… VA    PA - … PA          1 FALSE     
+## 5 /All Data by State/Virginia/foia_up_to_… VA    WV - … WV          1 FALSE</code></pre>
+<p>There are only 414 rows where this occurs, and it is less than 1% of the dataset.</p>
+<pre class="r"><code>#summarize cases where mismatch occurs
+ppp %&gt;% 
+  mutate(flag_match = state == state_2) %&gt;% 
+  count(flag_match) %&gt;% 
+  mutate(pct_mismatch = n / sum(n),
+         pct_mismatch = round(pct_mismatch, 4)) %&gt;% 
+  filter(flag_match == FALSE) %&gt;% 
+  arrange(-pct_mismatch)</code></pre>
+<pre><code>## # A tibble: 1 x 3
+##   flag_match     n pct_mismatch
+##   &lt;lgl&gt;      &lt;int&gt;        &lt;dbl&gt;
+## 1 FALSE        414       0.0001</code></pre>
+<p>Most of these bad rows are in the <code>foia_up_to_150k_other.csv</code> and <code>foia_150k_plus.csv</code> files.</p>
+<pre class="r"><code>ppp %&gt;% 
+  mutate(flag_match = state == state_2) %&gt;% 
+  count(file_name, flag_match) %&gt;% 
+  group_by(file_name) %&gt;% 
+  mutate(pct_mismatch = n / sum(n),
+         pct_mismatch = round(pct_mismatch, 4)) %&gt;% 
+  ungroup() %&gt;% 
+  filter(flag_match == FALSE) %&gt;% 
+  arrange(-pct_mismatch) %&gt;% 
+  slice(1:5)</code></pre>
+<pre><code>## # A tibble: 5 x 4
+##   file_name                                        flag_match     n pct_mismatch
+##   &lt;chr&gt;                                            &lt;lgl&gt;      &lt;int&gt;        &lt;dbl&gt;
+## 1 /All Data by State/Other/foia_up_to_150k_other.… FALSE        195     0.995   
+## 2 /All Data by State/Virgin Islands/foia_up_to_15… FALSE          1     0.000600
+## 3 /All Data by State/150k plus/foia_150k_plus.csv  FALSE        112     0.0002  
+## 4 /All Data by State/Arkansas/foia_up_to_150k_AR.… FALSE          8     0.0002  
+## 5 /All Data by State/Kentucky/foia_up_to_150k_KY.… FALSE         10     0.0002</code></pre>
+<p>I filter out the rows where the state doesn’t match the congressional district.</p>
+<pre class="r"><code>ppp &lt;- ppp %&gt;% 
+  filter(state == state_2)</code></pre>
+<p>This shows that there are some negative values in <code>loan_amount</code>. I filter out those values.</p>
+<pre class="r"><code>ppp %&gt;% 
+  mutate(loan_type = loan_amount &gt; 0) %&gt;% 
+  count(loan_type)</code></pre>
+<pre><code>## # A tibble: 3 x 2
+##   loan_type       n
+##   &lt;lgl&gt;       &lt;int&gt;
+## 1 FALSE          27
+## 2 TRUE      4223841
+## 3 NA         661106</code></pre>
+<pre class="r"><code>ppp &lt;- ppp %&gt;% 
+  filter(loan_amount &gt; 0 | is.na(loan_amount))</code></pre>
+</div>
+<div id="analysis" class="section level2">
+<h2>Analysis</h2>
+<div id="loan-amount" class="section level3">
+<h3>Loan amount</h3>
+<p>The first step is to split the data into 2 buckets. For loans above $150k, the SBA binned the loan amount instead of reporting the actual value.</p>
+<pre class="r"><code>ppp_under_150 &lt;- ppp %&gt;% 
+  filter(!str_detect(file_name, &quot;150k plus&quot;))
+
+ppp_over_150 &lt;- ppp %&gt;% 
+  filter(str_detect(file_name, &quot;150k plus&quot;)) %&gt;%
+  mutate(loan_range = fct_infreq(loan_range))</code></pre>
+<p>Among loans less than 150k, most are less than 21k, and the distribution is very heavily skewed to the right.</p>
+<pre class="r"><code>quantiles &lt;- ppp_under_150 %&gt;% 
+  summarize(quantiles = quantile(loan_amount, probs = c(.25, .50, .75)), 
+            probability = c(&quot;25th&quot;, &quot;50th&quot;, &quot;75th&quot;)) %&gt;% 
+  mutate(probability = as.factor(probability))
+
+ppp_under_150 %&gt;% 
+  ggplot(aes(loan_amount)) +
+  geom_histogram() +
+  geom_vline(data = quantiles, aes(xintercept = quantiles, color = probability)) +
+  scale_y_comma() +
+  scale_x_comma(labels = scales::dollar) +
+  labs(title = &quot;SBA PPP Loans&quot;,
+       subtitle = &quot;Among loans less than $150k&quot;,
+       x = &quot;Loan amount&quot;,
+       y = &quot;Number of loans&quot;,
+       color = &quot;Quantile&quot;)</code></pre>
+<p><img src="/post/working-with-paycheck-protection-program-data-in-r/index_files/figure-html/unnamed-chunk-10-1.png" width="672" /></p>
+<p>Loans under $150k make up the vast majority of all PPP loans.</p>
+<pre class="r"><code>ppp %&gt;% 
+  count(loan_range) %&gt;%   
+  mutate(loan_range = fct_reorder(loan_range, n)) %&gt;% 
+  ggplot(aes(n, loan_range)) +
+  geom_col() +
+  labs(title = &quot;SBA PPP Loans&quot;,
+       subtitle = &quot;All loans&quot;,
+       x = &quot;Number of loans&quot;,
+       y = &quot;Loan range&quot;) +
+  scale_x_comma()</code></pre>
+<p><img src="/post/working-with-paycheck-protection-program-data-in-r/index_files/figure-html/unnamed-chunk-11-1.png" width="672" /></p>
+<p>Loan approvals peaked in late April 2020 when the program began accepting applications for the second round, and picked up in July. There is extreme weekday-weekend seasonality in the data after April. The “U” shape from May to July generally coincides with the effort to “reopen” economies nationwide.</p>
+<pre class="r"><code>ppp %&gt;% 
+  count(date_approved) %&gt;% 
+  ggplot(aes(date_approved, n)) +
+  geom_point() +
+  geom_vline(xintercept = ymd(&quot;2020-04-16&quot;), linetype = 2) +
+  labs(title = &quot;SBA PPP Loans&quot;,
+       x = NULL,
+       y = &quot;Number of loans&quot;) +
+  scale_y_comma()</code></pre>
+<p><img src="/post/working-with-paycheck-protection-program-data-in-r/index_files/figure-html/unnamed-chunk-12-1.png" width="672" /></p>
+<p>This shows that bigger loans tended to be approved earlier in the program, which was a major criticism.</p>
+<pre class="r"><code>ppp %&gt;% 
+  count(date_approved, loan_range) %&gt;% 
+  mutate(loan_range = fct_reorder(loan_range, n) %&gt;% fct_rev) %&gt;% 
+  group_by(date_approved) %&gt;% 
+  mutate(pct_of_loans = n / sum(n)) %&gt;% 
+  ungroup() %&gt;% 
+  ggplot(aes(date_approved, pct_of_loans, fill = loan_range)) +
+  geom_area() +
+  scale_x_date(expand = c(0,0)) +
+  scale_y_percent(expand = c(0,0)) +
+  scale_fill_viridis_d() +
+  labs(title = &quot;SBA PPP Loans&quot;,
+       subtitle = &quot;% of loans approved on a date&quot;,
+       x = NULL,
+       y = &quot;% of loans&quot;,
+       fill = &quot;Loan range&quot;) +
+  theme(legend.position = &quot;bottom&quot;)</code></pre>
+<p><img src="/post/working-with-paycheck-protection-program-data-in-r/index_files/figure-html/unnamed-chunk-13-1.png" width="672" /></p>
+<p>Most states received similar proportions of small and large loans. Territories received more small loans and fewer large loans.</p>
+<pre class="r"><code>ppp %&gt;% 
+  mutate(loan_range = fct_inorder(loan_range)) %&gt;% 
+  count(state, loan_range) %&gt;% 
+  group_by(state) %&gt;% 
+  mutate(pct_of_loans = n / sum(n)) %&gt;% 
+  ungroup() %&gt;% 
+  filter(!is.na(state)) %&gt;% 
+  mutate(state = fct_reorder(state, n, .fun = sum)) %&gt;% 
+  ggplot(aes(pct_of_loans, state, fill = loan_range)) +
+  geom_col() +
+  scale_fill_viridis_d(direction = -1) +
+  scale_x_percent() +
+  labs(title = &quot;SBA PPP Loans&quot;,
+       subtitle = &quot;% of loan range by state&quot;,
+       x = &quot;% of loans&quot;,
+       y = NULL,
+       fill = &quot;Loan range&quot;) +
+  theme(legend.position = &quot;bottom&quot;)</code></pre>
+<p><img src="/post/working-with-paycheck-protection-program-data-in-r/index_files/figure-html/unnamed-chunk-14-1.png" width="672" /></p>
+</div>
+<div id="jobs" class="section level3">
+<h3>Jobs</h3>
+<p>Bigger loans tended to retain more jobs.</p>
+<pre class="r"><code>ppp %&gt;% 
+  filter(!is.na(jobs_retained)) %&gt;% 
+  mutate(loan_range = fct_inorder(loan_range) %&gt;% fct_rev()) %&gt;% 
+  ggplot(aes(jobs_retained, fill = loan_range)) +
+  #geom_histogram(bins = 200) +
+  geom_density() +
+  facet_wrap(~loan_range, ncol = 2, scales = &quot;free&quot;) +
+  scale_x_comma() +
+  #scale_y_comma() +
+  scale_fill_viridis_d() +
+  labs(title = &quot;SBA PPP Loan Program&quot;,
+       subtitle = &quot;Jobs retained&quot;,
+       x = &quot;Number of jobs retained&quot;,
+       y = &quot;Density&quot;,
+       fill = &quot;Loan range&quot;)</code></pre>
+<p><img src="/post/working-with-paycheck-protection-program-data-in-r/index_files/figure-html/unnamed-chunk-15-1.png" width="960" /></p>
+<p>The timeline of <code>jobs_retained</code> closely matches the trend of when loans were approved.</p>
+<pre class="r"><code>ppp %&gt;% 
+  filter(!is.na(jobs_retained)) %&gt;% 
+  group_by(date_approved) %&gt;% 
+  summarize(jobs_retained = sum(jobs_retained)) %&gt;% 
+  ungroup() %&gt;% 
+  ggplot(aes(date_approved, jobs_retained)) +
+  geom_point() +
+  scale_y_comma() +
+  labs(title = &quot;SBA PPP Loan Program&quot;,
+       subtitle = &quot;Jobs Retained&quot;,
+       x = NULL,
+       y = &quot;Jobs retained&quot;)</code></pre>
+<p><img src="/post/working-with-paycheck-protection-program-data-in-r/index_files/figure-html/unnamed-chunk-16-1.png" width="672" /></p>
+<p>Among loans less than 150k and where the data was reported, the median loan retained 6 jobs per 50k spent. Systemic reporting bias probably makes this number less reliable.</p>
+<pre class="r"><code>ppp %&gt;% 
+  filter(loan_range == &quot;Under $150k&quot;,
+         !is.na(jobs_retained),
+         !is.na(loan_amount)) %&gt;% 
+  select(jobs_retained, loan_amount) %&gt;% 
+  mutate(jobs_retained_per_50k = (jobs_retained / loan_amount) * 50000) %&gt;% 
+  summarize(jobs_retained_per_50k = median(jobs_retained_per_50k))</code></pre>
+<pre><code>## # A tibble: 1 x 1
+##   jobs_retained_per_50k
+##                   &lt;dbl&gt;
+## 1                  6.21</code></pre>
+<p>In the same loan range, bigger loans generally meant more jobs retained.</p>
+<pre class="r"><code>test &lt;- ppp %&gt;% 
+  filter(loan_range == &quot;Under $150k&quot;) %&gt;% 
+  count(loan_amount, jobs_retained, sort = TRUE) %&gt;%
+  slice(1:5000)
+
+test %&gt;% 
+  ggplot(aes(loan_amount, jobs_retained, color = n)) +
+  geom_density_2d_filled() +
+  scale_x_comma(labels = scales::dollar) +
+  labs(title = &quot;SBA PPP Loan Program&quot;,
+       subtitle = NULL,
+       x = &quot;Loan amount&quot;,
+       y = &quot;Jobs retained&quot;,
+       fill = &quot;Density of observations&quot;)</code></pre>
+<p><img src="/post/working-with-paycheck-protection-program-data-in-r/index_files/figure-html/unnamed-chunk-18-1.png" width="672" /></p>
+</div>
+<div id="mapping-the-data" class="section level3">
+<h3>Mapping the data</h3>
+<p>The dataset identifies which federal congressional district the applicant is from. I use <code>tigris</code> to retrieve the shapefiles for the most recent districts.</p>
+<pre class="r"><code>congress_districts &lt;- suppressMessages(congressional_districts(cb = TRUE, resolution = &quot;500k&quot;, year = 2018)) %&gt;% 
+  st_as_sf() %&gt;% 
+  clean_names() %&gt;% 
+  filter(statefp == 42)</code></pre>
+<p>This counts how many of each <code>loan_range</code> a <code>district</code> received. Note that there are missing values and what appear to be defunct district IDs in the <code>district</code> column.</p>
+<pre class="r"><code>ppp_pa_districts_loan_range &lt;- ppp %&gt;% 
+  filter(state == &quot;PA&quot;) %&gt;% 
+  count(district, loan_range, sort = TRUE)
+
+ppp_pa_districts_loan_range %&gt;% 
+  mutate(district = fct_explicit_na(district),
+         district = fct_reorder(district, n, .fun = sum),
+         loan_range = fct_rev(loan_range)) %&gt;% 
+  ggplot(aes(n, district, fill = loan_range)) +
+  geom_col() +
+  scale_x_comma() +
+  scale_fill_viridis_d() +
+  labs(title = &quot;SBA PPP Loan Program&quot;,
+       subtitle = &quot;Pennsylvania&quot;,
+       x = &quot;Number of loans&quot;,
+       y = &quot;Congressional District&quot;,
+       fill =  &quot;Loan range&quot;)</code></pre>
+<p><img src="/post/working-with-paycheck-protection-program-data-in-r/index_files/figure-html/unnamed-chunk-21-1.png" width="672" /></p>
+<p>Districts in eastern Pennsylvania near Philadelphia received more loans from the program.</p>
+<pre class="r"><code>ppp_pa_districts &lt;- ppp %&gt;% 
+  filter(state == &quot;PA&quot;) %&gt;% 
+  count(district, sort = TRUE)
+
+congress_districts %&gt;% 
+  right_join(ppp_pa_districts, by = c(&quot;cd116fp&quot; = &quot;district&quot;)) %&gt;% 
+  ggplot() +
+  geom_sf(aes(fill = n)) +
+  scale_fill_viridis_c(option = &quot;A&quot;, labels = scales::comma) +
+  labs(title = &quot;SBA PPP Loan Program&quot;,
+       subtitle = &quot;Pennsylvania&quot;,
+       fill = &quot;Number of loans&quot;) +
+  theme_void()</code></pre>
+<p><img src="/post/working-with-paycheck-protection-program-data-in-r/index_files/figure-html/unnamed-chunk-22-1.png" width="672" /></p>
+</div>
+</div>
