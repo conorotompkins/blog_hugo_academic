@@ -32,7 +32,7 @@ library(hrbrthemes)
 
 theme_set(theme_ipsum(base_size = 18))
 
-options(scipen = 999, digits = 4)
+options(scipen = 999, digits = 4, tigris_use_cache = TRUE)
 ```
 
 ## Load and clean data
@@ -42,7 +42,7 @@ The data is available at this site: https://home.treasury.gov/policy-issues/care
 The data exists in numerous CSV files, separated by state and sometimes loan amount. 
 
 This code chunk identifies all the CSV files in the folder, reads them in, and combines them.
-```{r}
+```{r cache=TRUE}
 path <- "data/ppp"
 
 #find all files in the folder that end in .csv
@@ -56,7 +56,7 @@ ppp <- list.files(path, full.names = TRUE, recursive = TRUE) %>%
 glimpse(ppp)
 ```
 This changes how the columns are interpreted, and separates the congressional district column into state and district. If the `district` value is blank, I replace it with `NA`.
-```{r}
+```{r cache=TRUE}
 ppp <- ppp %>% 
   mutate(jobs_retained = as.numeric(jobs_retained),
          date_approved = mdy(date_approved),
@@ -277,7 +277,7 @@ ppp %>%
 ```
 
 In the same loan range, bigger loans generally meant more jobs retained.
-```{r}
+```{r cache=TRUE}
 test <- ppp %>% 
   filter(loan_range == "Under $150k") %>% 
   count(loan_amount, jobs_retained, sort = TRUE) %>%
