@@ -1,0 +1,280 @@
+---
+# Documentation: https://sourcethemes.com/academic/docs/managing-content/
+
+title: "Clustering Bird Species With Seasonality"
+subtitle: ""
+summary: ""
+authors: [Conor Tompkins]
+tags: [R, eBird]
+categories: [R, eBird]
+date: 2020-08-07T16:36:22-04:00
+lastmod: 2020-08-07T16:36:22-04:00
+featured: false
+draft: false
+
+# Featured image
+# To use, add an image named `featured.jpg/png` to your page's folder.
+# Focal points: Smart, Center, TopLeft, Top, TopRight, Left, Right, BottomLeft, Bottom, BottomRight.
+image:
+  caption: ""
+  focal_point: ""
+  preview_only: false
+
+# Projects (optional).
+#   Associate this post with one or more of your projects.
+#   Simply enter your project's folder or file name without extension.
+#   E.g. `projects = ["internal-project"]` references `content/project/deep-learning/index.md`.
+#   Otherwise, set `projects = []`.
+projects: []
+---
+
+
+
+<p>In this post, I use k-means clustering to identify clusters of bird species based on frequency of observations per month. I use bird sightings in Allegheny County from <a href="https://ebird.org/data/download">eBird</a>.</p>
+<p>Load the relevant libraries:</p>
+<pre class="r"><code>library(tidyverse)
+library(lubridate)
+library(janitor)
+library(vroom)
+library(broom)
+library(hrbrthemes)
+
+theme_set(theme_bw())
+
+set.seed(1234)</code></pre>
+<p>Load and filter the data:</p>
+<pre class="r"><code>df &lt;- vroom(&quot;data/ebd_US-PA-003_201001_202003_relFeb-2020.zip&quot;, delim = &quot;\t&quot;) %&gt;% 
+  clean_names() %&gt;% 
+  mutate_at(vars(observer_id, locality, observation_date, time_observations_started, protocol_type), str_replace_na, &quot;NA&quot;) %&gt;% 
+  mutate(observation_count = as.numeric(str_replace(observation_count, &quot;X&quot;, as.character(NA))),
+         observation_event_id = str_c(observer_id, locality, observation_date, time_observations_started, sep = &quot;-&quot;),
+         observation_date = ymd(observation_date)) %&gt;%
+  filter(all_species_reported == 1)</code></pre>
+<pre class="r"><code>df_top_protocols &lt;- df %&gt;% 
+  count(protocol_type, sort = TRUE) %&gt;% 
+  slice(1:2)
+
+df &lt;- df %&gt;% 
+  semi_join(df_top_protocols) %&gt;% 
+  filter(year(observation_date) &gt;= 2016)</code></pre>
+<pre class="r"><code>df %&gt;% 
+  select(common_name, observation_date, observation_count) %&gt;% 
+  glimpse()</code></pre>
+<pre><code>## Rows: 405,148
+## Columns: 3
+## $ common_name       &lt;chr&gt; &quot;American Black Duck&quot;, &quot;American Black Duck&quot;, &quot;Amer…
+## $ observation_date  &lt;date&gt; 2016-01-31, 2016-01-24, 2016-01-30, 2016-01-31, 20…
+## $ observation_count &lt;dbl&gt; 2, 2, 2, 3, 2, 3, 57, 7, 2, 4, 1, 5, 8, 1, 1, 4, 1,…</code></pre>
+<p>This graph shows general seasonality in bird observations:</p>
+<pre class="r"><code>df %&gt;% 
+  count(observation_date) %&gt;% 
+  ggplot(aes(observation_date, n)) +
+    geom_line() +
+    labs(x = &quot;Observation date&quot;,
+         y = &quot;Observation events&quot;) +
+    scale_y_comma()</code></pre>
+<p><img src="/post/clustering-bird-species-with-seasonality/index_files/figure-html/unnamed-chunk-5-1.png" width="672" /></p>
+<p>This code chunk calculates the average number of observations by species and month. Then, it interpolates a value of <code>0</code> for birds where there were no sightings in a given month:</p>
+<pre class="r"><code>months &lt;- df %&gt;% 
+  mutate(observation_month = month(observation_date, label = TRUE)) %&gt;% 
+  distinct(observation_month) %&gt;% 
+  pull(observation_month)
+
+df_seasonality &lt;- df %&gt;% 
+  mutate(observation_month = month(observation_date, label = TRUE),
+         observation_year = year(observation_date)) %&gt;% 
+  group_by(common_name, observation_year, observation_month) %&gt;% 
+  summarize(observation_count = sum(observation_count, na.rm = TRUE)) %&gt;% 
+  group_by(common_name, observation_month) %&gt;% 
+  summarize(observation_count_mean = mean(observation_count) %&gt;% round(1)) %&gt;% 
+  ungroup() %&gt;% 
+  complete(common_name, observation_month = months) %&gt;% 
+  replace_na(list(observation_count_mean = 0)) %&gt;% 
+  arrange(common_name, observation_month)
+
+glimpse(df_seasonality)</code></pre>
+<pre><code>## Rows: 3,504
+## Columns: 3
+## $ common_name            &lt;chr&gt; &quot;Acadian Flycatcher&quot;, &quot;Acadian Flycatcher&quot;, &quot;A…
+## $ observation_month      &lt;ord&gt; Jan, Feb, Mar, Apr, May, Jun, Jul, Aug, Sep, O…
+## $ observation_count_mean &lt;dbl&gt; 0.0, 0.0, 0.0, 0.0, 219.5, 98.5, 60.5, 16.5, 1…</code></pre>
+<p>This transforms the mean monthly observation into log10:</p>
+<pre class="r"><code>df_seasonality &lt;- df_seasonality %&gt;% 
+  mutate(observation_count_mean_log10 = log10(observation_count_mean),
+         observation_count_mean_log10 = case_when(is.infinite(observation_count_mean_log10) ~ 0,
+                                                  TRUE ~ observation_count_mean_log10)) %&gt;% 
+  select(-observation_count_mean)</code></pre>
+<p>These graphs show that observations generally increase in the spring and fall, but there is wide variation:</p>
+<pre class="r"><code>df_seasonality %&gt;% 
+  ggplot(aes(observation_month, observation_count_mean_log10)) +
+    geom_boxplot() +
+    labs(x = &quot;Observation month&quot;,
+         y = &quot;Mean observation count (log10)&quot;)</code></pre>
+<p><img src="/post/clustering-bird-species-with-seasonality/index_files/figure-html/unnamed-chunk-8-1.png" width="672" /></p>
+<p>This tile graph shows the seasonality trends per species. I sort the birds by ascending mean observation count by month. It shows there are birds that appear year-round, some that appear seasonally, and some that only appear sporatically:</p>
+<pre class="r"><code>vec_common_name &lt;- df_seasonality %&gt;% 
+  pivot_wider(names_from = observation_month, values_from = observation_count_mean_log10, names_prefix = &quot;month_&quot;) %&gt;% 
+  clean_names() %&gt;% 
+  arrange(month_jan, month_feb, month_mar, month_apr, month_may, month_jun, month_jul, month_aug, month_sep, month_oct, month_nov, month_dec) %&gt;% 
+  pull(common_name)</code></pre>
+<pre class="r"><code>df_seasonality %&gt;%
+  mutate(common_name = factor(common_name, levels = vec_common_name)) %&gt;%
+  ggplot(aes(observation_month, common_name, fill = observation_count_mean_log10)) +
+    geom_tile() +
+    scale_fill_viridis_c(&quot;Mean observation count (log10)&quot;) +
+    scale_x_discrete(expand = c(0,0)) +
+    scale_y_discrete(expand = c(0,0)) +
+    labs(x = &quot;Observation month&quot;,
+         y = &quot;Species&quot;) +
+    theme(panel.grid = element_blank(),
+          axis.text.y = element_blank(),
+          axis.ticks.y = element_blank())</code></pre>
+<p><img src="/post/clustering-bird-species-with-seasonality/index_files/figure-html/unnamed-chunk-10-1.png" width="1152" /></p>
+<p>You can subjectively see clusters of bird types in the above graph. I will use k-means to attempt to find those clusters.</p>
+<p>This code chunk pivots the data wide to prepare it for clustering:</p>
+<pre class="r"><code>df_seasonality_wide &lt;- df_seasonality %&gt;% 
+  select(common_name, observation_month, observation_count_mean_log10) %&gt;% 
+  pivot_wider(names_from = observation_month, values_from = observation_count_mean_log10, names_prefix = &quot;month_&quot;) %&gt;% 
+  clean_names()
+
+glimpse(df_seasonality_wide)</code></pre>
+<pre><code>## Rows: 292
+## Columns: 13
+## $ common_name &lt;chr&gt; &quot;Acadian Flycatcher&quot;, &quot;Accipiter sp.&quot;, &quot;Alder/Willow Flyc…
+## $ month_jan   &lt;dbl&gt; 0.0000000, 0.0000000, 0.0000000, 0.0000000, 0.0000000, 1.…
+## $ month_feb   &lt;dbl&gt; 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 1.10380…
+## $ month_mar   &lt;dbl&gt; 0.0000000, 0.0000000, 0.0000000, 0.0000000, 0.0000000, 0.…
+## $ month_apr   &lt;dbl&gt; 0.0000000, 0.3010300, 0.0000000, 0.0000000, 0.7781513, 0.…
+## $ month_may   &lt;dbl&gt; 2.3414345, 0.0000000, 0.4771213, 0.0000000, 0.0000000, 0.…
+## $ month_jun   &lt;dbl&gt; 1.993436, 0.000000, 0.000000, 0.000000, 0.000000, 0.00000…
+## $ month_jul   &lt;dbl&gt; 1.7817554, 0.0000000, 0.6989700, 0.0000000, 0.0000000, 0.…
+## $ month_aug   &lt;dbl&gt; 1.2174839, 0.0000000, 0.4771213, 0.9030900, 0.0000000, 0.…
+## $ month_sep   &lt;dbl&gt; 1.0128372, 0.0000000, 1.0086002, 0.0000000, 0.0000000, 0.…
+## $ month_oct   &lt;dbl&gt; 0.0000000, 0.3010300, 0.0000000, 0.0000000, 0.0000000, 0.…
+## $ month_nov   &lt;dbl&gt; 0.0000000, 0.0000000, 0.0000000, 0.0000000, 0.0000000, 0.…
+## $ month_dec   &lt;dbl&gt; 0.0000000, 0.0000000, 0.0000000, 0.0000000, 0.0000000, 1.…</code></pre>
+<p>This uses <code>purrr</code> to cluster the data with varying numbers of clusters (1 to 9):</p>
+<pre class="r"><code>kclusts &lt;- tibble(k = 1:9) %&gt;%
+  mutate(
+    kclust = map(k, ~kmeans(df_seasonality_wide %&gt;% select(-common_name), .x)),
+    tidied = map(kclust, tidy),
+    glanced = map(kclust, glance),
+    augmented = map(kclust, augment, df_seasonality_wide %&gt;% select(-common_name))
+  )
+
+kclusts</code></pre>
+<pre><code>## # A tibble: 9 x 5
+##       k kclust   tidied            glanced          augmented          
+##   &lt;int&gt; &lt;list&gt;   &lt;list&gt;            &lt;list&gt;           &lt;list&gt;             
+## 1     1 &lt;kmeans&gt; &lt;tibble [1 × 15]&gt; &lt;tibble [1 × 4]&gt; &lt;tibble [292 × 13]&gt;
+## 2     2 &lt;kmeans&gt; &lt;tibble [2 × 15]&gt; &lt;tibble [1 × 4]&gt; &lt;tibble [292 × 13]&gt;
+## 3     3 &lt;kmeans&gt; &lt;tibble [3 × 15]&gt; &lt;tibble [1 × 4]&gt; &lt;tibble [292 × 13]&gt;
+## 4     4 &lt;kmeans&gt; &lt;tibble [4 × 15]&gt; &lt;tibble [1 × 4]&gt; &lt;tibble [292 × 13]&gt;
+## 5     5 &lt;kmeans&gt; &lt;tibble [5 × 15]&gt; &lt;tibble [1 × 4]&gt; &lt;tibble [292 × 13]&gt;
+## 6     6 &lt;kmeans&gt; &lt;tibble [6 × 15]&gt; &lt;tibble [1 × 4]&gt; &lt;tibble [292 × 13]&gt;
+## 7     7 &lt;kmeans&gt; &lt;tibble [7 × 15]&gt; &lt;tibble [1 × 4]&gt; &lt;tibble [292 × 13]&gt;
+## 8     8 &lt;kmeans&gt; &lt;tibble [8 × 15]&gt; &lt;tibble [1 × 4]&gt; &lt;tibble [292 × 13]&gt;
+## 9     9 &lt;kmeans&gt; &lt;tibble [9 × 15]&gt; &lt;tibble [1 × 4]&gt; &lt;tibble [292 × 13]&gt;</code></pre>
+<pre class="r"><code>clusters &lt;- kclusts %&gt;%
+  unnest(tidied)
+
+assignments &lt;- kclusts %&gt;% 
+  unnest(augmented)
+
+clusterings &lt;- kclusts %&gt;%
+  unnest(glanced)</code></pre>
+<p>This scree plot shows that 2 clusters is probably optimal, but 4 could also be useful:</p>
+<pre class="r"><code>ggplot(clusterings, aes(k, tot.withinss)) +
+  geom_line() +
+  geom_vline(xintercept = 2, linetype = 2) +
+  geom_vline(xintercept = 4, linetype = 2) +
+  scale_x_continuous(breaks = seq(1:9)) +
+  labs(x = &quot;Number of clusters&quot;)</code></pre>
+<p><img src="/post/clustering-bird-species-with-seasonality/index_files/figure-html/unnamed-chunk-14-1.png" width="672" /></p>
+<p>This graph shows how the clustering performed by comparing the observation value in January to the value in the other months, for each <code>k</code> cluster value 1 through 4:</p>
+<pre class="r"><code>assignments %&gt;% 
+  select(k, .cluster, contains(&quot;month_&quot;)) %&gt;% 
+  mutate(id = row_number()) %&gt;% 
+  pivot_longer(cols = contains(&quot;month_&quot;), names_to = &quot;observation_month&quot;, values_to = &quot;observation_count_mean_log10&quot;) %&gt;% 
+  mutate(month_jan = case_when(observation_month == &quot;month_jan&quot; ~ observation_count_mean_log10,
+                               TRUE ~ as.numeric(NA))) %&gt;% 
+  group_by(k, .cluster, id) %&gt;% 
+  fill(month_jan, .direction = c(&quot;down&quot;)) %&gt;% 
+  ungroup() %&gt;% 
+  filter(observation_month != &quot;month_jan&quot;,
+         k &lt;= 4) %&gt;% 
+  mutate(k = str_c(k, &quot;cluster(s)&quot;, sep = &quot; &quot;)) %&gt;% 
+  ggplot(aes(observation_count_mean_log10, month_jan, color = .cluster)) +
+    geom_point() +
+    facet_grid(k ~ observation_month) +
+    labs(x = &quot;Observation month&quot;,
+         y = &quot;January&quot;)</code></pre>
+<p><img src="/post/clustering-bird-species-with-seasonality/index_files/figure-html/unnamed-chunk-15-1.png" width="1152" /></p>
+<p>Subjectively, I think the optimal number of clusters is 4. It is noiser, but could show more interesting granularity in seasonality.</p>
+<p>This clusters the data using 4 clusters:</p>
+<pre class="r"><code>df_kmeans &lt;- df_seasonality_wide %&gt;% 
+  select(-common_name) %&gt;% 
+  kmeans(centers = 4)</code></pre>
+<pre class="r"><code>df_clustered &lt;- augment(df_kmeans, df_seasonality_wide) %&gt;% 
+  select(common_name, .cluster)
+
+df_clustered</code></pre>
+<pre><code>## # A tibble: 292 x 2
+##    common_name                                   .cluster
+##    &lt;chr&gt;                                         &lt;fct&gt;   
+##  1 Acadian Flycatcher                            2       
+##  2 Accipiter sp.                                 3       
+##  3 Alder/Willow Flycatcher (Traill&#39;s Flycatcher) 3       
+##  4 American Avocet                               3       
+##  5 American Bittern                              3       
+##  6 American Black Duck                           4       
+##  7 American Coot                                 4       
+##  8 American Crow                                 1       
+##  9 American Golden-Plover                        3       
+## 10 American Goldfinch                            1       
+## # … with 282 more rows</code></pre>
+<p>This shows the same style of tile graph as shown previously, but facets it by cluster.</p>
+<pre class="r"><code>vec_common_name_cluster &lt;- df_seasonality %&gt;%
+  left_join(df_clustered) %&gt;% 
+  pivot_wider(names_from = observation_month, values_from = observation_count_mean_log10, names_prefix = &quot;month_&quot;) %&gt;% 
+  clean_names() %&gt;% 
+  arrange(cluster, month_jan, month_feb, month_mar, month_apr, month_may, month_jun, month_jul, month_aug, month_sep, month_oct, month_nov, month_dec) %&gt;% 
+  pull(common_name)</code></pre>
+<pre class="r"><code>df_seasonality_clustered &lt;-  df_seasonality %&gt;%
+  left_join(df_clustered) %&gt;% 
+  mutate(common_name = factor(common_name, levels = vec_common_name_cluster))
+
+df_seasonality_clustered %&gt;% 
+  mutate(.cluster = str_c(&quot;Cluster&quot;, .cluster, sep = &quot; &quot;)) %&gt;% 
+  ggplot(aes(observation_month, common_name, fill = observation_count_mean_log10)) +
+    geom_tile() +
+    facet_wrap(~.cluster, scales = &quot;free_y&quot;) +
+    scale_fill_viridis_c(&quot;Mean observation count (log10)&quot;) +
+    scale_x_discrete(expand = c(0,0)) +
+    scale_y_discrete(expand = c(0,0)) +
+    labs(x = &quot;Observation month&quot;,
+         y = &quot;Species&quot;) +
+    theme(panel.grid = element_blank(),
+          axis.text.y = element_blank(),
+          axis.ticks.y = element_blank())</code></pre>
+<p><img src="/post/clustering-bird-species-with-seasonality/index_files/figure-html/unnamed-chunk-19-1.png" width="1152" /></p>
+<p>Cluster 1 shows birds that only appear sporatically. I think these are birds that migrate through Allegheny County, but do not stick around. Cluster 2 shows birds that are generally around all year. Cluster 3 shows birds that are seen mostly during the summer, and cluster 4 contains birds that appear in the winter.</p>
+<p>This shows a sample of each cluster:</p>
+<pre class="r"><code>df_cluster_sample &lt;- df_clustered %&gt;% 
+  group_by(.cluster) %&gt;% 
+  sample_n(10, replace = FALSE) %&gt;% 
+  ungroup()
+
+df_seasonality_clustered %&gt;%
+  semi_join(df_cluster_sample) %&gt;% 
+  mutate(.cluster = str_c(&quot;Cluster&quot;, .cluster, sep = &quot; &quot;)) %&gt;% 
+  ggplot(aes(observation_month, common_name, fill = observation_count_mean_log10)) +
+    geom_tile() +
+    facet_wrap(~.cluster, scales = &quot;free_y&quot;) +
+    scale_fill_viridis_c(&quot;Mean observation count (log10)&quot;) +
+    scale_x_discrete(expand = c(0,0)) +
+    scale_y_discrete(expand = c(0,0)) +
+    labs(x = &quot;Observation month&quot;,
+         y = NULL) +
+    theme(panel.grid = element_blank())</code></pre>
+<p><img src="/post/clustering-bird-species-with-seasonality/index_files/figure-html/unnamed-chunk-20-1.png" width="1152" /></p>
