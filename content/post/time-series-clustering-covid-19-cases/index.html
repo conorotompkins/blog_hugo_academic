@@ -1,0 +1,287 @@
+---
+# Documentation: https://sourcethemes.com/academic/docs/managing-content/
+
+title: "Time series clustering COVID-19 case data"
+subtitle: ""
+summary: ""
+slug: time-series-clustering-covid-19-cases
+authors: []
+tags: []
+categories: []
+date: 2020-08-07T09:32:51-04:00
+lastmod: 2020-08-07T09:32:51-04:00
+featured: false
+draft: false
+
+# Featured image
+# To use, add an image named `featured.jpg/png` to your page's folder.
+# Focal points: Smart, Center, TopLeft, Top, TopRight, Left, Right, BottomLeft, Bottom, BottomRight.
+image:
+  caption: ""
+  focal_point: ""
+  preview_only: false
+
+# Projects (optional).
+#   Associate this post with one or more of your projects.
+#   Simply enter your project's folder or file name without extension.
+#   E.g. `projects = ["internal-project"]` references `content/project/deep-learning/index.md`.
+#   Otherwise, set `projects = []`.
+projects: []
+---
+
+
+
+<p><a href="https://public.tableau.com/profile/conorotompkins#!/vizhome/COVID-19TimeSeriesClustering/Dashboard?publish=yes">Interactive Tableau visualization of the clusters</a></p>
+<p>The goal of this post is to group states into clusters based on the shape of the curve of a state’s cumulative sum of COVID-19 cases. This type of clustering is useful when the variance in absolute values of a time series obscures the underlying pattern in the data. Since states experienced plateaus and peaks at different times, my hope is that the clustering is able to identify those differences.</p>
+<p>This loads the packages I will use in the analysis and set up the environment:</p>
+<pre class="r"><code>library(tidyverse)
+library(tsibble)
+library(dtwclust)
+library(tidymodels)
+library(hrbrthemes)
+library(tidycensus)
+library(sf)
+
+options(scipen = 999, digits = 4)
+
+theme_set(theme_ipsum())
+
+set.seed(1234)</code></pre>
+<p>I will adjust the cases to per 100,000, which requires information from the U.S. Census. This code pulls state-level population data from the Census API via <code>tidycensus</code>:</p>
+<pre class="r"><code>census_data &lt;- get_acs(geography = &quot;state&quot;, variables = &quot;B01003_001&quot;, geometry = FALSE) %&gt;% 
+  select(state = NAME, population = estimate)</code></pre>
+<p>This pulls the COVID-19 data from the <a href="">NYTimes GitHub page</a>:</p>
+<pre class="r"><code>covid &lt;- read_csv(&quot;https://raw.githubusercontent.com/nytimes/covid-19-data/master/us-states.csv&quot;) %&gt;% 
+  arrange(state, date) %&gt;% 
+  semi_join(census_data) %&gt;% 
+  filter(date &lt;= &quot;2020-07-18&quot;)</code></pre>
+<p>I use the <code>tsibble</code> package to check if there are implicit gaps in the data. For example, if there was data for 2020-06-01 and 2020-06-03, there is an implicit gap because there is not data for 2020-06-02.</p>
+<pre class="r"><code>covid %&gt;% 
+  as_tsibble(index = date, key = state) %&gt;% 
+  count_gaps()</code></pre>
+<pre><code>## # A tibble: 0 x 4
+## # … with 4 variables: state &lt;chr&gt;, .from &lt;date&gt;, .to &lt;date&gt;, .n &lt;int&gt;</code></pre>
+<p>Thankfully, there are not any such gaps. If there were, I would have to impute values for the missing days.</p>
+<p>Since states experienced onset of COVID-19 at different times, I find the day each state hit 10 cases, and calculate <code>days_since_10th_case</code>, which I will use instead of <code>date</code>.</p>
+<pre class="r"><code>covid_10th_case &lt;- covid %&gt;% 
+  filter(cases &gt;= 10) %&gt;% 
+  group_by(state) %&gt;% 
+  slice(1) %&gt;% 
+  ungroup() %&gt;% 
+  select(state, date_of_10th_case = date)
+
+covid &lt;- covid %&gt;% 
+  left_join(covid_10th_case, by = c(&quot;state&quot; = &quot;state&quot;)) %&gt;% 
+  group_by(state) %&gt;% 
+  mutate(days_since_10th_case = date - date_of_10th_case) %&gt;% 
+  ungroup() %&gt;% 
+  filter(days_since_10th_case &gt;= 0)
+
+covid &lt;- covid %&gt;% 
+  select(state, days_since_10th_case, cases)</code></pre>
+<p>Next I calculate <code>cases_per_capita</code>:</p>
+<pre class="r"><code>covid &lt;- covid %&gt;% 
+  left_join(census_data) %&gt;% 
+  mutate(cases_per_capita = (cases / population) * 100000) %&gt;% 
+  select(-population)</code></pre>
+<p>Next I scale the cases so that the mean is 0 and the standard deviation is 1. Each state has its own mean and standard deviation.</p>
+<pre class="r"><code>covid &lt;- covid %&gt;% 
+  group_by(state) %&gt;% 
+  mutate(cases_per_capita_scaled = scale(cases_per_capita, center = TRUE, scale = TRUE)) %&gt;% 
+  ungroup()</code></pre>
+<p>The result of this is that the clustering algorithm will focus on the <em>shape</em> of the line for each state instead of absolute values. This graph shows the difference:</p>
+<pre class="r"><code>covid %&gt;% 
+  pivot_longer(cols = contains(&quot;cases&quot;), names_to = &quot;metric&quot;, values_to = &quot;value&quot;) %&gt;% 
+  ggplot(aes(days_since_10th_case, value, group = state)) +
+  geom_hline(yintercept = 0, linetype = 2) +
+  geom_line(alpha = .1) +
+  facet_wrap(~metric, ncol = 1, scales = &quot;free_y&quot;) +
+  scale_y_comma()</code></pre>
+<p><img src="/post/time-series-clustering-covid-19-cases/index_files/figure-html/unnamed-chunk-8-1.png" width="672" /></p>
+<p><code>tsclust</code> requires that the input data be a series of lists, not a dataframe. <code>unstack</code> takes a <code>key</code> and <code>value</code> as arguments and turns the dataframe into a list of lists.</p>
+<pre class="r"><code>covid_list &lt;- covid %&gt;% 
+  select(state, cases_per_capita_scaled) %&gt;% 
+  unstack(cases_per_capita_scaled ~ state)</code></pre>
+<p>This loops through the clustering function 20 times and saves each output to a list. The first object groups the data into 2 clusters, the second object has 3 clusters, and it continues in that pattern.</p>
+<pre class="r"><code>cluster_dtw_h &lt;- list()
+
+kclust &lt;- 20
+
+for (i in 2:kclust){
+  cluster_dtw_h[[i]] &lt;- tsclust(covid_list, 
+                                type = &quot;h&quot;, 
+                                k = i,
+                                distance = &quot;dtw&quot;, 
+                                control = hierarchical_control(method = &quot;complete&quot;), 
+                                seed = 390, 
+                                preproc = NULL, 
+                                args = tsclust_args(dist = list(window.size = 21L)))
+  
+  print(i)
+}</code></pre>
+<p>The object that <code>tsclust</code> outputs has a complex structure that makes it difficult to work with at scale. The data I need to pull out is stored in various slots. The next step is to write functions that pulls out the data and tidies it up.</p>
+<div id="cluster-assigments" class="section level3">
+<h3>Cluster assigments</h3>
+<p>This function pulls which cluster each state was assigned to, for each <code>kclust</code>.</p>
+<pre class="r"><code>get_cluster_assignments &lt;- function(object, cluster_number){
+  
+  df &lt;- slot(object[[cluster_number]], &quot;cluster&quot;)
+
+  return(df)
+}</code></pre>
+<pre class="r"><code>cluster_assignments &lt;- 2:kclust %&gt;%
+  set_names() %&gt;% 
+  map_df(~get_cluster_assignments(cluster_dtw_h, cluster_number = .x), .id = &quot;kclust&quot;) %&gt;% 
+  pivot_longer(cols = -kclust, names_to = &quot;state&quot;, values_to = &quot;cluster_assignment&quot;) %&gt;% 
+  mutate(kclust = as.numeric(kclust)) %&gt;% 
+  arrange(state, kclust)</code></pre>
+<pre class="r"><code>glimpse(cluster_assignments)</code></pre>
+<pre><code>## Rows: 988
+## Columns: 3
+## $ kclust             &lt;dbl&gt; 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,…
+## $ state              &lt;chr&gt; &quot;Alabama&quot;, &quot;Alaska&quot;, &quot;Arizona&quot;, &quot;Arkansas&quot;, &quot;Calif…
+## $ cluster_assignment &lt;dbl&gt; 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,…</code></pre>
+<p>These graphs shows which states are more likely to be assigned to a different cluster, depending on the number of clusters.</p>
+<pre class="r"><code>state_variance &lt;- cluster_assignments %&gt;% 
+  distinct(state, cluster_assignment) %&gt;% 
+  count(state, sort = TRUE)
+
+cluster_assignments %&gt;%
+  left_join(state_variance) %&gt;% 
+  mutate(state = fct_reorder(state, n)) %&gt;% 
+  ggplot(aes(kclust, state, fill = as.factor(cluster_assignment))) +
+  geom_tile() +
+  scale_fill_viridis_d() +
+  labs(fill = &quot;Cluster assignment&quot;,
+       y = NULL) +
+  theme(legend.position = &quot;bottom&quot;, legend.direction = &quot;horizontal&quot;)</code></pre>
+<p><img src="/post/time-series-clustering-covid-19-cases/index_files/figure-html/unnamed-chunk-15-1.png" width="672" /></p>
+<pre class="r"><code>cluster_assignments %&gt;% 
+  distinct(state, cluster_assignment) %&gt;% 
+  count(state) %&gt;% 
+  mutate(state = fct_reorder(state, n)) %&gt;% 
+  ggplot(aes(n, state)) +
+  geom_col() +
+  labs(title = &quot;How much each state reacts to an increase in kclust&quot;,
+       x = &quot;Number of clusters a state appears in&quot;,
+       y = NULL)</code></pre>
+<p><img src="/post/time-series-clustering-covid-19-cases/index_files/figure-html/unnamed-chunk-16-1.png" width="672" /></p>
+<p>The number of singelton clusters (clusters with only one state) is an important metric for determining the optimal number of clusters. If a state is truly unique, a singleton cluster may be appropriate. Having 50 singleton clusters, however, would obviously be overfit.</p>
+<p>This shows that the number of singleton clusters increases as <code>kclust</code> increases.</p>
+<pre class="r"><code>cluster_singletons &lt;- cluster_assignments %&gt;% 
+  count(kclust, cluster_assignment) %&gt;% 
+  group_by(kclust) %&gt;% 
+  mutate(min_cluster_population = min(n)) %&gt;% 
+  filter(n == min_cluster_population) %&gt;% 
+  ungroup() %&gt;% 
+  select(kclust, min_cluster_population, n) %&gt;% 
+  group_by(kclust, min_cluster_population) %&gt;% 
+  summarize(n = sum(n)) %&gt;% 
+  ungroup()
+
+cluster_singletons %&gt;% 
+  filter(min_cluster_population == 1) %&gt;% 
+  ggplot(aes(kclust, n)) +
+  geom_line() +
+  scale_x_comma() +
+  labs(x = &quot;kclust&quot;,
+       y = &quot;Number of singleton clusters&quot;)</code></pre>
+<p><img src="/post/time-series-clustering-covid-19-cases/index_files/figure-html/unnamed-chunk-17-1.png" width="672" /></p>
+<p>There is not a singleton cluster until <code>kclust</code> is 8.</p>
+<pre class="r"><code>cluster_singletons %&gt;% 
+  mutate(first_singleton = cumsum(min_cluster_population == 1) == 1) %&gt;%
+  filter(first_singleton == TRUE)</code></pre>
+<pre><code>## # A tibble: 1 x 4
+##   kclust min_cluster_population     n first_singleton
+##    &lt;dbl&gt;                  &lt;int&gt; &lt;int&gt; &lt;lgl&gt;          
+## 1      8                      1     1 TRUE</code></pre>
+</div>
+<div id="cluster-distance" class="section level3">
+<h3>Cluster distance</h3>
+<p>This function pulls the average distance of each cluster, for each value of <code>kclust</code>. Clusters with lower average distance are more similar, and those with higher average distance are less similar.</p>
+<pre class="r"><code>get_cluster_metrics &lt;- function(object, cluster_number){
+  
+  df &lt;- slot(object[[cluster_number]], &quot;clusinfo&quot;)
+  
+  return(df)
+}</code></pre>
+<p>This shows that 12 clusters may be the optimal number for <code>kclust</code>. Values greater than that begin to see diminishing returns.</p>
+<pre class="r"><code>cluster_metrics %&gt;% 
+  ggplot(aes(kclust, av_dist)) +
+  geom_jitter(aes(color = as.factor(kclust), size = size), show.legend = FALSE) +
+  geom_smooth(group = 1) +
+  geom_vline(xintercept = 12, linetype = 2) +
+  scale_size_continuous(range = c(.5, 4)) +
+  labs(y = &quot;Average distance&quot;)</code></pre>
+<p><img src="/post/time-series-clustering-covid-19-cases/index_files/figure-html/unnamed-chunk-22-1.png" width="672" /></p>
+<p>This shows what the individual state time series data looks like when it is grouped into 12 clusters:</p>
+<pre class="r"><code>best_kclust &lt;- 12
+
+covid %&gt;% 
+  left_join(filter(cluster_assignments, kclust == best_kclust)) %&gt;% 
+  add_count(cluster_assignment) %&gt;% 
+  mutate(cluster_assignment = str_c(&quot;Cluster&quot;, cluster_assignment, sep = &quot; &quot;),
+         cluster_assignment = fct_reorder(as.character(cluster_assignment), n),
+         cluster_assignment = fct_rev(cluster_assignment)) %&gt;% 
+  ggplot(aes(days_since_10th_case, cases_per_capita_scaled, 
+             color = cluster_assignment, group = state)) +
+  geom_hline(yintercept = 0, linetype = 2) +
+  geom_vline(xintercept = 60, linetype = 2) +
+  geom_line(size = 1, alpha = .5) +
+  facet_wrap(~cluster_assignment, ncol = 4) +
+  guides(color = FALSE) +
+  labs(title = &quot;kclust == 12&quot;)</code></pre>
+<p><img src="/post/time-series-clustering-covid-19-cases/index_files/figure-html/unnamed-chunk-24-1.png" width="672" /></p>
+<p>I think 12 clusters is appropriate, but there are obviously cases where individual assignments can be disputed. This is a supervised clustering problem, so I generally pick the <code>kclust</code> with the least diminishing returns and go with it.</p>
+</div>
+<div id="mapping" class="section level2">
+<h2>Mapping</h2>
+<p>The data is aggregated at the state level, which can easily be graphed with <code>ggplot2</code> and <code>tidycensus</code>.</p>
+<pre class="r"><code>map &lt;- get_acs(geography = &quot;state&quot;, variables = &quot;B01003_001&quot;, geometry = TRUE, shift_geo = TRUE)
+
+map %&gt;% 
+  ggplot() +
+  geom_sf() +
+  theme_void()</code></pre>
+<p><img src="/post/time-series-clustering-covid-19-cases/index_files/figure-html/unnamed-chunk-25-1.png" width="672" /></p>
+<p>This joins the cluster assignments to the map object and summarizes the state polygons by region. This dissolves the state boundaries and creates polygons for each cluster.</p>
+<pre class="r"><code>map_cluster &lt;- map %&gt;% 
+  left_join(cluster_assignments %&gt;% 
+             filter(kclust == best_kclust), by = c(&quot;NAME&quot; = &quot;state&quot;)) %&gt;% 
+  add_count(cluster_assignment) %&gt;% 
+  mutate(cluster_assignment = as.character(cluster_assignment),
+         cluster_assignment = fct_reorder(cluster_assignment, desc(n))) %&gt;% 
+  group_by(cluster_assignment) %&gt;% 
+  summarize()
+
+state_clustered &lt;- map %&gt;% 
+  left_join(cluster_assignments %&gt;% 
+              filter(kclust == best_kclust), by = c(&quot;NAME&quot; = &quot;state&quot;)) %&gt;% 
+  add_count(cluster_assignment) %&gt;% 
+  mutate(cluster_assignment = as.character(cluster_assignment),
+         cluster_assignment = fct_reorder(cluster_assignment, desc(n)))</code></pre>
+<p>This code creates the map, and overlays the state boundaries on the cluster polygons.</p>
+<pre class="r"><code>map_cluster %&gt;% 
+  ggplot() +
+  geom_sf(aes(fill = cluster_assignment, color = cluster_assignment),
+          size = 1) +
+  geom_sf_text(data = state_clustered, aes(label = cluster_assignment)) +
+  labs(fill = &quot;Cluster assignment&quot;,
+       color = &quot;Cluster assigmment&quot;) +
+  guides(color = FALSE) +
+  theme_void() +
+  theme(legend.position = &quot;bottom&quot;,
+        legend.direction = &quot;horizontal&quot;)</code></pre>
+<p><img src="/post/time-series-clustering-covid-19-cases/index_files/figure-html/unnamed-chunk-27-1.png" width="672" /></p>
+<p>Cluster 3 stands out as the group of states that are currently struggling with COVID-19 the most. Interestingly, these states are consistently clustered together regardless of the value of <code>kclust</code>, which means that these states are very similar.</p>
+<p>Cluster 5 represents the states that had the earliest and worst outbreaks, but have beaten back the virus for now. Cluster 6 are the neighbors of New York and New Jersey. They experienced less peaky curves later than Cluster 5. Cluster 6 is an “echo” of Cluster 5.</p>
+<p>The singleton clusters for kclust of 12 are Vermont, Nebraska, and Hawaii. Nebraska had a long period with almost no new cases at the beginning, but then had a very steep increase after that. Vermont’s curve started steeply almost immediately after its 10th case, which distinguishes it from the other states. Hawaii has had two periods of very steep increases sperated by a long period with few new cases. This is very likely due to the difficulty of traveling to the state with travel lockdowns in place.</p>
+<div id="sources" class="section level3">
+<h3>Sources</h3>
+<ul>
+<li><a href="https://rpubs.com/esobolewska/dtw-time-series" class="uri">https://rpubs.com/esobolewska/dtw-time-series</a></li>
+<li><a href="http://www.rdatamining.com/examples/time-series-clustering-classification" class="uri">http://www.rdatamining.com/examples/time-series-clustering-classification</a></li>
+<li><a href="http://rstudio-pubs-static.s3.amazonaws.com/398402_abe1a0343a4e4e03977de8f3791e96bb.html" class="uri">http://rstudio-pubs-static.s3.amazonaws.com/398402_abe1a0343a4e4e03977de8f3791e96bb.html</a></li>
+</ul>
+</div>
+</div>
