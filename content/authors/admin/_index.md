@@ -4,37 +4,34 @@ authors:
 bio: My research interests include distributed robotics, mobile computing and programmable matter.
 education:
   courses:
-  - course: PhD in Artificial Intelligence
-    institution: Stanford University
-    year: 2012
-  - course: MEng in Artificial Intelligence
-    institution: Massachusetts Institute of Technology
-    year: 2009
-  - course: BSc in Artificial Intelligence
-    institution: Massachusetts Institute of Technology
-    year: 2008
-email: ""
+  - course: MA Public and International Affairs
+    institution: University of Pittsburgh GSPIA
+    year: 2013
+  - course: BA Political Science, International Relations
+    institution: Duquesne University
+    year: 2011
+email: "conorotompkins@gmail.com"
 interests:
-- Artificial Intelligence
-- Computational Linguistics
+- Data visualization
+- Statistical programming
 - Information Retrieval
-organizations:
-- name: Stanford University
-  url: ""
-role: Professor of Artificial Intelligence
+# organizations:
+# - name: Stanford University
+#   url: ""
+role: Data Analyst
 social:
-- icon: envelope
-  icon_pack: fas
-  link: '#contact'
 - icon: twitter
   icon_pack: fab
-  link: https://twitter.com/conor_tompkinsg
-- icon: google-scholar
-  icon_pack: ai
-  link: https://scholar.google.co.uk/citations?user=sIwtMXoAAAAJ
+  link: https://twitter.com/conor_tompkins
 - icon: github
   icon_pack: fab
   link: https://github.com/conorotompkins
+- icon: stack-overflow
+  icon_pack: fab
+  link: https://stackoverflow.com/users/4731542/conor
+- icon: linkedin
+  icon_pack: fab
+  link: https://www.linkedin.com/in/conor-tompkins-04b06a3b/
 superuser: true
 title: Conor Tompkins
 user_groups:
@@ -42,6 +39,4 @@ user_groups:
 - Visitors
 ---
 
-Nelson Bighetti is a professor of artificial intelligence at the Stanford AI Lab. His research interests include distributed robotics, mobile computing and programmable matter. He leads the Robotic Neurobiology group, which develops self-reconfiguring robots, systems of self-organizing robots, and mobile sensor networks.
-
-Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed neque elit, tristique placerat feugiat ac, facilisis vitae arcu. Proin eget egestas augue. Praesent ut sem nec arcu pellentesque aliquet. Duis dapibus diam vel metus tempus vulputate.
+I am a data analyst in the Pittsburgh area with an interest in data visualization, statistical programming, and civic data.
