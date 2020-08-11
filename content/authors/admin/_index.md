@@ -14,6 +14,7 @@ email: "conorotompkins@gmail.com"
 interests:
 - Data visualization
 - Statistical programming
+- Civic data
 # organizations:
 # - name: Stanford University
 #   url: ""
