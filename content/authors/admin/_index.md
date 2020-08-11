@@ -1,7 +1,7 @@
 ---
 authors:
 - admin
-bio: My research interests include distributed robotics, mobile computing and programmable matter.
+bio: Data analyst in the Pittsburgh area with an interest in data visualization, statistical programming, and civic data.
 education:
   courses:
   - course: MA Public and International Affairs
@@ -14,11 +14,10 @@ email: "conorotompkins@gmail.com"
 interests:
 - Data visualization
 - Statistical programming
-- Information Retrieval
 # organizations:
 # - name: Stanford University
 #   url: ""
-role: Data Analyst
+#role: Data Analyst
 social:
 - icon: twitter
   icon_pack: fab
