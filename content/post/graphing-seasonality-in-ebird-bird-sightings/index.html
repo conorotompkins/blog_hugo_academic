@@ -1,0 +1,185 @@
+---
+# Documentation: https://sourcethemes.com/academic/docs/managing-content/
+
+title: "Graphing Seasonality in Ebird Bird Sightings"
+subtitle: ""
+summary: ""
+authors: [Conor Tompkins]
+tags: [R, eBird]
+categories: [R, eBird]
+date: 2020-03-31
+lastmod: 2020-08-12T10:40:18-04:00
+featured: false
+draft: false
+
+# Featured image
+# To use, add an image named `featured.jpg/png` to your page's folder.
+# Focal points: Smart, Center, TopLeft, Top, TopRight, Left, Right, BottomLeft, Bottom, BottomRight.
+image:
+  caption: ""
+  focal_point: ""
+  preview_only: false
+
+# Projects (optional).
+#   Associate this post with one or more of your projects.
+#   Simply enter your project's folder or file name without extension.
+#   E.g. `projects = ["internal-project"]` references `content/project/deep-learning/index.md`.
+#   Otherwise, set `projects = []`.
+projects: []
+---
+
+
+
+<p>Over the winter I became interested in birding. Sitting in your back yard doing nothing but watching birds fly around is quite relaxing. Naturally I am looking for ways to optimize and quantify this relaxing activity. <a href="https://ebird.org/home">eBird</a> lets you track your bird sightings and research which birds are common or more rare in your area. Luckily, the folks at <a href="https://ropensci.org/">ROpenSci</a> have the <code>{rebird}</code> <a href="https://cran.r-project.org/web/packages/rebird/index.html">package</a>, which provides an easy interface to the eBird API.</p>
+<p>In this post I will graph the seasonality of observation frequency of the top 10 birds in Pennsylvania. Frequency in this context is the % of eBird checklists that the bird appeared in during a given period.</p>
+<p>Load up packages:</p>
+<pre class="r"><code>library(tidyverse)
+library(lubridate)
+library(vroom)
+library(janitor)
+library(rebird)
+library(hrbrthemes)
+library(ggrepel)
+library(gganimate)
+
+theme_set(theme_ipsum())</code></pre>
+<p>The <code>ebirdfreq</code> takes a location and time period and returns the frequency and sample size for the birds returned in the query.</p>
+<pre class="r"><code>df_freq_raw &lt;- ebirdfreq(loctype = &#39;states&#39;, loc = &#39;US-PA&#39;, startyear = 2019,
+                         endyear = 2019, startmonth = 1, endmonth = 12)
+
+df_freq_raw</code></pre>
+<pre><code>## # A tibble: 22,176 x 4
+##    comName                                       monthQt   frequency sampleSize
+##    &lt;chr&gt;                                         &lt;chr&gt;         &lt;dbl&gt;      &lt;dbl&gt;
+##  1 Black-bellied Whistling-Duck                  January-1  0              4448
+##  2 Snow Goose                                    January-1  0.0220         4448
+##  3 Ross&#39;s Goose                                  January-1  0.000674       4448
+##  4 Snow x Ross&#39;s Goose (hybrid)                  January-1  0              4448
+##  5 Snow/Ross&#39;s Goose                             January-1  0              4448
+##  6 Graylag Goose (Domestic type)                 January-1  0.000225       4448
+##  7 Swan Goose (Domestic type)                    January-1  0              4448
+##  8 Graylag x Swan Goose (Domestic type) (hybrid) January-1  0              4448
+##  9 Greater White-fronted Goose                   January-1  0.00360        4448
+## 10 Domestic goose sp. (Domestic type)            January-1  0.00292        4448
+## # … with 22,166 more rows</code></pre>
+<p>This does some light data munging to get the data in shape.</p>
+<pre class="r"><code>df_freq_clean &lt;- df_freq_raw %&gt;% 
+  clean_names() %&gt;%
+  separate(month_qt, into = c(&quot;month&quot;, &quot;week&quot;)) %&gt;% 
+  mutate(week = as.numeric(week),
+         month = ymd(str_c(&quot;2019&quot;, month, &quot;01&quot;, sep = &quot;-&quot;)),
+         month = month(month, label = TRUE, abbr = TRUE),
+         state = &quot;PA&quot;) %&gt;% 
+  rename(common_name = com_name) %&gt;% 
+  arrange(common_name, month, week)
+
+df_freq_clean</code></pre>
+<pre><code>## # A tibble: 22,176 x 6
+##    common_name        month  week frequency sample_size state
+##    &lt;chr&gt;              &lt;ord&gt; &lt;dbl&gt;     &lt;dbl&gt;       &lt;dbl&gt; &lt;chr&gt;
+##  1 Acadian Flycatcher Jan       1         0        4448 PA   
+##  2 Acadian Flycatcher Jan       2         0        3382 PA   
+##  3 Acadian Flycatcher Jan       3         0        3306 PA   
+##  4 Acadian Flycatcher Jan       4         0        4830 PA   
+##  5 Acadian Flycatcher Feb       1         0        3890 PA   
+##  6 Acadian Flycatcher Feb       2         0        3605 PA   
+##  7 Acadian Flycatcher Feb       3         0        7848 PA   
+##  8 Acadian Flycatcher Feb       4         0        3636 PA   
+##  9 Acadian Flycatcher Mar       1         0        3737 PA   
+## 10 Acadian Flycatcher Mar       2         0        4406 PA   
+## # … with 22,166 more rows</code></pre>
+<p>This takes the month-week time series and summarizes to the month level:</p>
+<pre class="r"><code>df_month &lt;- df_freq_clean %&gt;% 
+  group_by(common_name, month) %&gt;% 
+  summarize(sample_size_mean = mean(sample_size),
+            frequency_mean = mean(frequency) %&gt;% round(2)) %&gt;%
+  ungroup()
+
+df_month</code></pre>
+<pre><code>## # A tibble: 5,544 x 4
+##    common_name        month sample_size_mean frequency_mean
+##    &lt;chr&gt;              &lt;ord&gt;            &lt;dbl&gt;          &lt;dbl&gt;
+##  1 Acadian Flycatcher Jan              3992.           0   
+##  2 Acadian Flycatcher Feb              4745.           0   
+##  3 Acadian Flycatcher Mar              4748            0   
+##  4 Acadian Flycatcher Apr              5392.           0   
+##  5 Acadian Flycatcher May              5868.           0.04
+##  6 Acadian Flycatcher Jun              3367.           0.06
+##  7 Acadian Flycatcher Jul              2639            0.05
+##  8 Acadian Flycatcher Aug              2876.           0.02
+##  9 Acadian Flycatcher Sep              3198.           0   
+## 10 Acadian Flycatcher Oct              2894.           0   
+## # … with 5,534 more rows</code></pre>
+<p>Here I find the top 10 birds in terms of average monthly observation frequency:</p>
+<pre class="r"><code>df_top_birds &lt;- df_freq_clean %&gt;% 
+  group_by(common_name) %&gt;% 
+  summarize(sample_size_mean = mean(sample_size),
+            frequency_mean = mean(frequency) %&gt;% round(2)) %&gt;% 
+  ungroup() %&gt;% 
+  arrange(desc(frequency_mean)) %&gt;% 
+  select(common_name) %&gt;% 
+  slice(1:10)
+
+df_top_birds</code></pre>
+<pre><code>## # A tibble: 10 x 1
+##    common_name           
+##    &lt;chr&gt;                 
+##  1 Northern Cardinal     
+##  2 Blue Jay              
+##  3 Mourning Dove         
+##  4 American Robin        
+##  5 Song Sparrow          
+##  6 American Crow         
+##  7 Red-bellied Woodpecker
+##  8 American Goldfinch    
+##  9 Carolina Wren         
+## 10 Downy Woodpecker</code></pre>
+<p>This basic line graph shows some of the pattern of seasonality, but fails to show the cyclical nature of the data.</p>
+<pre class="r"><code>df_month %&gt;% 
+  semi_join(df_top_birds) %&gt;% 
+  ggplot(aes(month, frequency_mean, group = common_name)) +
+    geom_line() +
+    scale_y_percent() +
+    labs(title = &quot;Bird observation frequency&quot;,
+         subtitle = &quot;Top 10 birds in PA, 2019&quot;,
+         x = NULL,
+         y = &quot;Mean frequency&quot;,
+         caption = &quot;Data from ebird.org. @conorotompkins&quot;)</code></pre>
+<p><img src="/post/graphing-seasonality-in-ebird-bird-sightings/index_files/figure-html/unnamed-chunk-6-1.png" width="672" /></p>
+<p>I use <code>coord_polar</code> to change the coordinate system to match the cyclical flow of the months:</p>
+<pre class="r"><code>df_month %&gt;% 
+  semi_join(df_top_birds) %&gt;% 
+  ggplot(aes(month, frequency_mean, group = common_name)) +
+    geom_polygon(color = &quot;black&quot;, fill = NA, size = .5) +
+    coord_polar() +
+    scale_y_percent() +
+    labs(title = &quot;Bird observation frequency&quot;,
+         subtitle = &quot;Top 10 birds in PA, 2019&quot;,
+         x = NULL,
+         y = &quot;Mean frequency&quot;,
+         caption = &quot;Data from ebird.org. @conorotompkins&quot;)</code></pre>
+<p><img src="/post/graphing-seasonality-in-ebird-bird-sightings/index_files/figure-html/unnamed-chunk-7-1.png" width="672" /></p>
+<p><code>gganimate</code> lets me focus on one species at a time while showing all the data.</p>
+<pre class="r"><code>plot_animated &lt;- df_month %&gt;% 
+  semi_join(df_top_birds) %&gt;% 
+  mutate(common_name = fct_inorder(common_name)) %&gt;% 
+  ggplot(aes(month, frequency_mean)) +
+  geom_polygon(data = df_month %&gt;% rename(name = common_name),
+               aes(group = name),
+               color = &quot;grey&quot;, fill = NA, size = .5) +
+  geom_polygon(aes(group = common_name),
+               color = &quot;blue&quot;, fill = NA, size = 1.2) +
+  coord_polar() +
+  #facet_wrap(~common_name) +
+  scale_y_percent() +
+   labs(subtitle = &quot;Most frequently observed birds in PA (2019)&quot;,
+        x = NULL,
+        y = &quot;Frequency of observation&quot;,
+        caption = &quot;Data from ebird.org. @conorotompkins&quot;) +
+  theme(plot.margin = margin(2, 2, 2, 2),
+        plot.title = element_text(color = &quot;blue&quot;))
+
+plot_animated +
+  transition_manual(common_name) +
+  ggtitle(&quot;{current_frame}&quot;)</code></pre>
+<p><img src="/post/graphing-seasonality-in-ebird-bird-sightings/index_files/figure-html/unnamed-chunk-8-1.gif" /><!-- --></p>
