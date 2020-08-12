@@ -552,6 +552,8 @@ commute_zoom &lt;- commute_tracts %&gt;%
   st_buffer(dist = .01) %&gt;% 
   st_bbox()
 
+names(commute_zoom) &lt;- NULL
+
 ###leaflet
 transit_lines_palette &lt;- colorFactor(palette = &quot;Set1&quot;, domain = commuter_transit_lines$full_route_name_id)
 tract_palette &lt;- colorFactor(palette = &quot;Set1&quot;, domain = commute_tracts$GEOID)
