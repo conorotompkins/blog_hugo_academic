@@ -283,6 +283,7 @@ p
 
 You can use this interactive map made with `leaflet` to explore the transit lines and stops that connect Downtown and Shadyside:
 ```{r}
+library(widgetframe)
 #transform geometries to crs 4326
 
 allegheny <- st_transform(allegheny, crs = 4326)
@@ -301,7 +302,7 @@ names(commute_zoom) <- NULL
 transit_lines_palette <- colorFactor(palette = "Set1", domain = commuter_transit_lines$full_route_name_id)
 tract_palette <- colorFactor(palette = "Set1", domain = commute_tracts$GEOID)
 
-leaflet() %>% 
+interactive_map <- leaflet() %>% 
   addProviderTiles(providers$CartoDB.Positron) %>% 
   addPolygons(data = allegheny,
               color = "#444444",
@@ -342,4 +343,6 @@ leaflet() %>%
                    options = layersControlOptions(collapsed = FALSE)) %>% 
   addMiniMap() %>% 
   fitBounds(lng1 = commute_zoom[[1]], lat1 = commute_zoom[[2]], lng2 = commute_zoom[[3]], lat2 = commute_zoom[[4]])
+
+frameWidget(interactive_map)
 ```
