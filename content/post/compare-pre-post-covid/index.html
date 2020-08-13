@@ -48,7 +48,9 @@ library(hrbrthemes)
 
 options(scipen = 999, digits = 4)
 
-theme_set(theme_ipsum())</code></pre>
+theme_set(theme_ipsum(base_size = 20, 
+                      strip_text_size = 18, 
+                      axis_title_size = 18))</code></pre>
 <p>I had already combined the usage data from the <a href="https://data.wprdc.org/dataset/healthyride-trip-data">WPRDC</a> with <code>list.files</code> and <code>map_df(read_csv)</code>, so I can just read in the combined CSV file:</p>
 <pre class="r"><code>data &lt;- read_csv(&quot;data/combined_ride_data.csv&quot;)</code></pre>
 <p>Summarizing the number of rides per day shows that the data is very seasonal. The red line is on March 6, which is the date of the first <em>known</em> positive COVID-19 case in the state.</p>
@@ -84,7 +86,7 @@ components(dcmp) %&gt;%
 ## $ season_week     &lt;dbl&gt; 148.509, -78.004, -82.011, -7.388, -57.130, -19.725, …
 ## $ remainder       &lt;dbl&gt; 97.153, -37.821, -55.613, -90.871, -13.951, 46.581, 1…
 ## $ season_adjust   &lt;dbl&gt; 233.89, 100.57, 84.42, 49.21, 126.17, 188.37, 274.81,…</code></pre>
-<p>This code pivots the data long and plots the true number of rides per day and the estimate of the underlying trend per model.</p>
+<p>This code pivots the data long and plots the true number of rides per day and the estimate of the underlying trend per model. The “season_adjust” panel shows the number of rides adjusted for seasonal effects, the “trend” panel shows the underlying trend, and the “remainder” panel shows how much the seasonal adjustment missed by.</p>
 <pre class="r"><code>components(dcmp) %&gt;% 
   pivot_longer(cols = number_of_rides:season_adjust) %&gt;% 
   mutate(name = factor(name, levels = c(&quot;number_of_rides&quot;, &quot;season_adjust&quot;,
@@ -92,17 +94,17 @@ components(dcmp) %&gt;%
                                         &quot;season_year&quot;, &quot;season_week&quot;,
                                         &quot;random&quot;, &quot;remainder&quot;))) %&gt;% 
   filter(!is.na(value)) %&gt;% 
-  filter(name == &quot;trend&quot; | name == &quot;number_of_rides&quot; | name == &quot;remainder&quot;) %&gt;% 
+  filter(name == &quot;trend&quot; | name == &quot;season_adjust&quot; | name == &quot;number_of_rides&quot; | name == &quot;remainder&quot;) %&gt;% 
   ggplot(aes(time, value, color = .model)) +
-  geom_point(alpha = .5, size = .1) +
+  geom_point(alpha = .6, size = .6) +
   annotate(geom = &quot;rect&quot;, 
            xmin = ymd(&quot;2020-03-06&quot;), xmax = ymd(&quot;2020-12-31&quot;),
            ymin = -Inf, ymax = Inf, 
            fill = &quot;red&quot;, alpha = .1) +
-  facet_grid(name ~ .model, scales = &quot;free_y&quot;) +
+  facet_grid(name ~ .model, scales = &quot;free_y&quot;, labeller = label_wrap_gen()) +
   guides(color = FALSE)</code></pre>
-<p><img src="/post/compare-pre-post-covid/index_files/figure-html/unnamed-chunk-5-1.png" width="672" /></p>
-<p>I am not a time series expert, but it appears that the most basic STL model does the best job of identifying the underlying trend in the data.</p>
+<p><img src="/post/compare-pre-post-covid/index_files/figure-html/unnamed-chunk-5-1.png" width="960" /></p>
+<p>I am not a time series expert, but it appears that the most basic STL model <code>STL(number_of_rides)</code> does the best job because that model’s “trend” panel shows the least seasonality.</p>
 <pre class="r"><code>components(dcmp) %&gt;% 
   pivot_longer(cols = number_of_rides:season_adjust) %&gt;% 
   mutate(name = factor(name, levels = c(&quot;number_of_rides&quot;, &quot;season_adjust&quot;,
@@ -110,10 +112,10 @@ components(dcmp) %&gt;%
                                         &quot;season_year&quot;, &quot;season_week&quot;,
                                         &quot;random&quot;, &quot;remainder&quot;))) %&gt;% 
   filter(!is.na(value)) %&gt;% 
-  filter(name == &quot;trend&quot; | name == &quot;number_of_rides&quot; | name == &quot;remainder&quot;) %&gt;% 
+  filter(name == &quot;trend&quot; | name == &quot;season_adjust&quot; | name == &quot;number_of_rides&quot; | name == &quot;remainder&quot;) %&gt;% 
   filter(.model == &quot;STL(number_of_rides)&quot;) %&gt;% 
   ggplot(aes(time, value, color = .model)) +
-  geom_point(alpha = 1, size = .1, color = &quot;#619CFF&quot;) +
+  geom_point(alpha = .6, size = .6, color = &quot;#619CFF&quot;) +
   annotate(geom = &quot;rect&quot;, 
            xmin = ymd(&quot;2016-03-06&quot;), xmax = ymd(&quot;2016-03-30&quot;),
            ymin = -Inf, ymax = Inf, 
@@ -134,7 +136,7 @@ components(dcmp) %&gt;%
            xmin = ymd(&quot;2020-03-06&quot;), xmax = ymd(&quot;2020-03-06&quot;) + 60,
            ymin = -Inf, ymax = Inf, 
            fill = &quot;red&quot;, alpha = .3) +
-  facet_grid(name ~ .model, scales = &quot;free_y&quot;) +
+  facet_grid(name ~ .model, scales = &quot;free_y&quot;, labeller = label_wrap_gen()) +
   guides(color = FALSE)</code></pre>
-<p><img src="/post/compare-pre-post-covid/index_files/figure-html/unnamed-chunk-6-1.png" width="672" /></p>
-<p>Focusing on that model, it appears that the trend dropped in mid-March, but rebounded to normal levels quickly.</p>
+<p><img src="/post/compare-pre-post-covid/index_files/figure-html/unnamed-chunk-6-1.png" width="960" /></p>
+<p>Focusing on that model, it appears that the trend dropped in mid-March, but rebounded to normal levels quickly. I highlighted the data from previous Marches to see if there was a recurring dip in March.</p>

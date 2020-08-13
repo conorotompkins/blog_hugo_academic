@@ -48,7 +48,9 @@ library(hrbrthemes)
 
 options(scipen = 999, digits = 4)
 
-theme_set(theme_ipsum())
+theme_set(theme_ipsum(base_size = 20, 
+                      strip_text_size = 18, 
+                      axis_title_size = 18))
 ```
 
 I had already combined the usage data from the [WPRDC](https://data.wprdc.org/dataset/healthyride-trip-data) with `list.files` and `map_df(read_csv)`, so I can just read in the combined CSV file:
@@ -81,8 +83,8 @@ components(dcmp) %>%
   glimpse()
 ```
 
-This code pivots the data long and plots the true number of rides per day and the estimate of the underlying trend per model.
-```{r fig.height=10}
+This code pivots the data long and plots the true number of rides per day and the estimate of the underlying trend per model. The "season_adjust" panel shows the number of rides adjusted for seasonal effects, the "trend" panel shows the underlying trend, and the "remainder" panel shows how much the seasonal adjustment missed by.
+```{r fig.height=10, fig.width=10}
 components(dcmp) %>% 
   pivot_longer(cols = number_of_rides:season_adjust) %>% 
   mutate(name = factor(name, levels = c("number_of_rides", "season_adjust",
@@ -90,19 +92,19 @@ components(dcmp) %>%
                                         "season_year", "season_week",
                                         "random", "remainder"))) %>% 
   filter(!is.na(value)) %>% 
-  filter(name == "trend" | name == "number_of_rides" | name == "remainder") %>% 
+  filter(name == "trend" | name == "season_adjust" | name == "number_of_rides" | name == "remainder") %>% 
   ggplot(aes(time, value, color = .model)) +
-  geom_point(alpha = .5, size = .1) +
+  geom_point(alpha = .6, size = .6) +
   annotate(geom = "rect", 
            xmin = ymd("2020-03-06"), xmax = ymd("2020-12-31"),
            ymin = -Inf, ymax = Inf, 
            fill = "red", alpha = .1) +
-  facet_grid(name ~ .model, scales = "free_y") +
+  facet_grid(name ~ .model, scales = "free_y", labeller = label_wrap_gen()) +
   guides(color = FALSE)
 ```
 
-I am not a time series expert, but it appears that the most basic STL model does the best job of identifying the underlying trend in the data.
-```{r fig.height=10}
+I am not a time series expert, but it appears that the most basic STL model `STL(number_of_rides)` does the best job because that model's "trend" panel shows the least seasonality.
+```{r fig.height=10, fig.width=10}
 components(dcmp) %>% 
   pivot_longer(cols = number_of_rides:season_adjust) %>% 
   mutate(name = factor(name, levels = c("number_of_rides", "season_adjust",
@@ -110,10 +112,10 @@ components(dcmp) %>%
                                         "season_year", "season_week",
                                         "random", "remainder"))) %>% 
   filter(!is.na(value)) %>% 
-  filter(name == "trend" | name == "number_of_rides" | name == "remainder") %>% 
+  filter(name == "trend" | name == "season_adjust" | name == "number_of_rides" | name == "remainder") %>% 
   filter(.model == "STL(number_of_rides)") %>% 
   ggplot(aes(time, value, color = .model)) +
-  geom_point(alpha = 1, size = .1, color = "#619CFF") +
+  geom_point(alpha = .6, size = .6, color = "#619CFF") +
   annotate(geom = "rect", 
            xmin = ymd("2016-03-06"), xmax = ymd("2016-03-30"),
            ymin = -Inf, ymax = Inf, 
@@ -134,8 +136,8 @@ components(dcmp) %>%
            xmin = ymd("2020-03-06"), xmax = ymd("2020-03-06") + 60,
            ymin = -Inf, ymax = Inf, 
            fill = "red", alpha = .3) +
-  facet_grid(name ~ .model, scales = "free_y") +
+  facet_grid(name ~ .model, scales = "free_y", labeller = label_wrap_gen()) +
   guides(color = FALSE)
 ```
 
-Focusing on that model, it appears that the trend dropped in mid-March, but rebounded to normal levels quickly.
+Focusing on that model, it appears that the trend dropped in mid-March, but rebounded to normal levels quickly. I highlighted the data from previous Marches to see if there was a recurring dip in March.
