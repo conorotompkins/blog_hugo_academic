@@ -28,12 +28,14 @@ image:
 projects: []
 ---
 
-#cross-validated model
+## Intro
 
-#goal is to create a classification model that can distinguish between tracts 
-#that are in the city vs. not in the city
+My goal is to create a classification model that can distinguish between tracts that are inside the city or outside the city.
+
+History of Pitt border
 
 
+This code loads the packages I need, configures some options, and sets the seed.
 ```{r}
 #set up environment
 library(tidyverse)
@@ -50,7 +52,7 @@ options(scipen = 999, digits = 4, tigris_use_cache = TRUE)
 
 set.seed(1234)
 ```
-
+I created a small Shiny app that let me select which tracts are inside the city borders. I will go over that in a future post. This loads the tracts from the Census API and pulls the data from the Shiny app.
 ```{r}
 #load data about census tracts
 tracts <- get_decennial(year = 2010, state = "PA", county = "Allegheny County", 
@@ -63,6 +65,7 @@ city_tracts <- read_csv("data/selected_tracts.csv", col_types = cols("c", "l")) 
 glimpse(city_tracts)
 ```
 
+This reads in the boundary shapefile and plots it against the tracts.
 ```{r}
 pgh_official_boundary <- st_read("data/Pittsburgh_City_Boundary-shp") %>% 
   mutate(geography = "City boundary") %>% 
@@ -80,6 +83,20 @@ tracts %>%
   theme_void()
 ```
 
+This reads in all the data from the Census that I will consider for the model. Generally I use the following types of data:
+
+* Housing
+  ** Percent of housing units owned outright
+  ** Percent of housing units owned with a mortgage
+  ** Percent of housing units rented
+* Demographics
+  ** Percent of people in the tract that are
+    *** White
+    *** Black
+* Population density
+* Economic data
+  ** Number of workers that live in the tract
+  ** Number of jobs in the tract
 
 ```{r}
 all_data <- read_csv("data/combined_census_data_tract.csv", col_types = cols(.default = "c")) %>%
@@ -97,7 +114,7 @@ all_data <- read_csv("data/combined_census_data_tract.csv", col_types = cols(.de
 glimpse(all_data)
 ```
 
-
+This plot compares all of the variables against each other. I used this to identify covariance and determine which variables should be excluded.
 ```{r eval=FALSE}
 #eda
 pairwise_plot <- all_data %>% 
@@ -108,6 +125,7 @@ pairwise_plot <- all_data %>%
 
 insert pairwise plot here
 
+This finalizes the data I will model.
 ```{r}
 census_combined <- all_data %>% 
   select(GEOID, type, 
@@ -124,7 +142,6 @@ glimpse(census_combined)
 #split
 split <- initial_split(census_combined, prop = 3/4, strata = type)
 training <- training(split)
-validation <- mc_cv(training, prop = 3/4, times = 100, strata = type)
 testing <- testing(split)
 ```
 
@@ -132,7 +149,8 @@ testing <- testing(split)
 #recipe
 model_recipe <- recipe(type ~ ., data = training) %>% 
   update_role(GEOID, new_role = "id") %>% 
-  step_normalize(all_predictors())
+  step_normalize(all_predictors())# %>% 
+  #step_mutate(type = as.factor(type))
 
 model_recipe_prep <- model_recipe %>% 
   prep(strings_as_factors = FALSE)
@@ -143,11 +161,11 @@ model_recipe_prep %>%
 
 ```{r}
 #create model specifications
-ranger_model <- rand_forest(trees = 1000, mode = "classification") %>%
-  set_engine("ranger", importance = "impurity")
-
 lm_model <- logistic_reg(mode = "classification") %>% 
   set_engine("glm")
+
+ranger_model <- rand_forest(trees = 1000, mode = "classification") %>%
+  set_engine("ranger", importance = "impurity")
 ```
 
 
@@ -157,6 +175,18 @@ lm_model <- logistic_reg(mode = "classification") %>%
 lm_workflow <- workflow() %>% 
   add_recipe(model_recipe_prep) %>% 
   add_model(lm_model)
+
+lm_workflow %>% 
+  fit(juice(model_recipe_prep)) %>% 
+  predict(juice(model_recipe_prep)) %>% 
+  bind_cols(juice(model_recipe_prep)) %>% 
+  mutate(type = as.factor(type)) %>% 
+  metrics(truth = type, estimate = .pred_class)
+```
+
+The logistic regression model does a pretty good job on the training set, but I wanted to know if that was just a one-off performance. The next code chunk creates cross-validation folds with Monte Carlo. Validating the model against these folds should tell me if the model is stable.
+```{r}
+validation <- mc_cv(training, prop = 3/4, times = 100, strata = type)
 
 lm_res <- lm_workflow %>% 
   fit_resamples(resamples = validation) %>% 
@@ -176,6 +206,10 @@ rf_res <- rf_workflow %>%
   fit_resamples(resamples = validation) %>% 
   mutate(model = "rf")
 
+rf_res
+```
+
+```{r}
 rf_res %>% 
   collect_metrics()
 ```
@@ -233,8 +267,7 @@ var_imp <- rf_workflow %>%
 var_imp %>%
   mutate(Variable = fct_reorder(Variable, Importance)) %>% 
   ggplot(aes(Importance, Variable)) +
-  geom_point() +
-  theme_bw()
+  geom_point()
 ```
 
 
@@ -248,7 +281,9 @@ predictions_testing <- fit(rf_workflow, bake(model_recipe_prep, testing)) %>%
 #rf only does very slightly worse on test set
 predictions_testing %>% 
   metrics(truth = type, estimate = .pred_class)
+```
 
+```{r}
 #failures are false positives this time
 predictions_testing %>% 
   conf_mat(truth = type, estimate = .pred_class)
@@ -265,8 +300,6 @@ full_predictions <- fit(rf_workflow, bake(model_recipe_prep, census_combined)) %
   bind_cols(bake(model_recipe_prep, census_combined)) %>% 
   mutate(type = as.factor(type))
 
-full_predictions %>%
-  write_csv("output/full_prediction_percent.csv")
 
 full_predictions_small <- full_predictions %>% 
   select(GEOID, type, contains(".pred")) %>% 
@@ -318,8 +351,6 @@ full_predictions_binary <- fit(rf_workflow, bake(model_recipe_prep, census_combi
   mutate(type = as.factor(type),
          correct = type == .pred_class)
 
-full_predictions_binary %>%
-  write_csv("output/full_prediction_binary.csv")
 
 full_predictions_binary_small <- full_predictions_binary %>% 
   select(GEOID, type, .pred_class, correct)
@@ -343,31 +374,14 @@ tracts %>%
 
 
 
+## References
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#references
-#http://www.rebeccabarter.com/blog/2020-03-25_machine_learning/#split-into-traintest
-#https://www.brodrigues.co/blog/2018-11-25-tidy_cv/
-#https://agailloty.rbind.io/en/post/tidymodels/
-#https://alison.rbind.io/post/2020-02-27-better-tidymodels/
-#https://hansjoerg.me/2020/02/09/tidymodels-for-machine-learning/
-#https://towardsdatascience.com/modelling-with-tidymodels-and-parsnip-bae2c01c131c
-#https://www.benjaminsorensen.me/post/modeling-with-parsnip-and-tidymodels/
-#https://rviews.rstudio.com/2019/06/19/a-gentle-intro-to-tidymodels/
+http://www.rebeccabarter.com/blog/2020-03-25_machine_learning/#split-into-traintest
+https://www.brodrigues.co/blog/2018-11-25-tidy_cv/
+https://agailloty.rbind.io/en/post/tidymodels/
+https://alison.rbind.io/post/2020-02-27-better-tidymodels/
+https://hansjoerg.me/2020/02/09/tidymodels-for-machine-learning/
+https://towardsdatascience.com/modelling-with-tidymodels-and-parsnip-bae2c01c131c
+https://www.benjaminsorensen.me/post/modeling-with-parsnip-and-tidymodels/
+https://rviews.rstudio.com/2019/06/19/a-gentle-intro-to-tidymodels/
 
