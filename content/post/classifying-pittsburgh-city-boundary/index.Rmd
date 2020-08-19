@@ -105,11 +105,7 @@ all_data <- read_csv("data/combined_census_data_tract.csv", col_types = cols(.de
                           is.na(selected) ~ "non_city")) %>% 
   mutate(across(pct_units_owned_loan:housed_population_density_pop_per_square_km, as.numeric)) %>% 
   select(GEOID, type, everything()) %>%
-  mutate(flag_void = (total_population == 0 &
-                        housed_population_density_pop_per_square_km == 0 &
-                        jobs == 0 &
-                        workers == 0) %>% as.factor) %>% 
-  select(-c(flag_void, selected, total_population_housed))
+  select(-c(selected, total_population_housed))
 
 glimpse(all_data)
 ```
@@ -137,20 +133,16 @@ census_combined <- all_data %>%
 glimpse(census_combined)
 ```
 
-
+Since the total amount of data available is small, I will bootstrap the data to try to achieve more stable results from the model.
 ```{r}
-#split
-split <- initial_split(census_combined, prop = 3/4, strata = type)
-training <- training(split)
-testing <- testing(split)
+tract_boot <- bootstraps(census_combined, strata = type, times = 50)
 ```
 
 ```{r}
 #recipe
-model_recipe <- recipe(type ~ ., data = training) %>% 
+model_recipe <- recipe(type ~ ., data = census_combined) %>% 
   update_role(GEOID, new_role = "id") %>% 
-  step_normalize(all_predictors())# %>% 
-  #step_mutate(type = as.factor(type))
+  step_normalize(all_predictors())
 
 model_recipe_prep <- model_recipe %>% 
   prep(strings_as_factors = FALSE)
@@ -176,26 +168,15 @@ lm_workflow <- workflow() %>%
   add_recipe(model_recipe_prep) %>% 
   add_model(lm_model)
 
-lm_workflow %>% 
-  fit(juice(model_recipe_prep)) %>% 
-  predict(juice(model_recipe_prep)) %>% 
-  bind_cols(juice(model_recipe_prep)) %>% 
-  mutate(type = as.factor(type)) %>% 
-  metrics(truth = type, estimate = .pred_class)
-```
-
-The logistic regression model does a pretty good job on the training set, but I wanted to know if that was just a one-off performance. The next code chunk creates cross-validation folds with Monte Carlo. Validating the model against these folds should tell me if the model is stable.
-```{r}
-validation <- mc_cv(training, prop = 3/4, times = 100, strata = type)
-
 lm_res <- lm_workflow %>% 
-  fit_resamples(resamples = validation) %>% 
+  fit_resamples(resamples = tract_boot) %>% 
   mutate(model = "lm")
 
 lm_res %>% 
   collect_metrics()
 ```
 
+The logistic regression does a pretty good job, but I want to know if a random forest could do better.
 ```{r}
 #rf
 rf_workflow <- workflow() %>% 
@@ -203,13 +184,9 @@ rf_workflow <- workflow() %>%
   add_model(ranger_model)
 
 rf_res <- rf_workflow %>% 
-  fit_resamples(resamples = validation) %>% 
+  fit_resamples(resamples = tract_boot) %>% 
   mutate(model = "rf")
 
-rf_res
-```
-
-```{r}
 rf_res %>% 
   collect_metrics()
 ```
@@ -228,36 +205,6 @@ combined_res %>%
 
 
 ```{r}
-### predict on training
-predictions_training <- fit(rf_workflow, juice(model_recipe_prep)) %>% 
-  predict(juice(model_recipe_prep)) %>% 
-  bind_cols(juice(model_recipe_prep)) %>% 
-  mutate(type = as.factor(type))
-
-#rf does much better on full training set
-predictions_training %>% 
-  metrics(truth = type, estimate = .pred_class)
-
-#failures are false negatives
-predictions_training %>% 
-  conf_mat(truth = type, estimate = .pred_class)
-```
-
-
-```{r}
-#roc
-df_roc_curve <- fit(rf_workflow, juice(model_recipe_prep)) %>% 
-  predict(juice(model_recipe_prep), type = "prob") %>% 
-  bind_cols(juice(model_recipe_prep)) %>% 
-  mutate(type = as.factor(type)) %>% 
-  roc_curve(truth = type, .pred_city)
-
-df_roc_curve %>% 
-  autoplot()
-```
-
-
-```{r}
 #variable importance
 var_imp <- rf_workflow %>% 
   fit(juice(model_recipe_prep)) %>% 
@@ -272,32 +219,13 @@ var_imp %>%
 
 
 ```{r}
-### predict on testing
-predictions_testing <- fit(rf_workflow, bake(model_recipe_prep, testing)) %>% 
-  predict(bake(model_recipe_prep, testing)) %>% 
-  bind_cols(bake(model_recipe_prep, testing)) %>% 
-  mutate(type = as.factor(type))
-
-#rf only does very slightly worse on test set
-predictions_testing %>% 
-  metrics(truth = type, estimate = .pred_class)
-```
-
-```{r}
-#failures are false positives this time
-predictions_testing %>% 
-  conf_mat(truth = type, estimate = .pred_class)
-```
-
-
-```{r}
 #map results
 
 #predict on full dataset
 #probabilities
-full_predictions <- fit(rf_workflow, bake(model_recipe_prep, census_combined)) %>% 
-  predict(bake(model_recipe_prep, census_combined), type = "prob") %>% 
-  bind_cols(bake(model_recipe_prep, census_combined)) %>% 
+full_predictions <- fit(rf_workflow, juice(model_recipe_prep)) %>% 
+  predict(juice(model_recipe_prep), type = "prob") %>% 
+  bind_cols(juice(model_recipe_prep)) %>% 
   mutate(type = as.factor(type))
 
 
@@ -345,12 +273,11 @@ tracts %>%
 
 ```{r}
 #binary predictions
-full_predictions_binary <- fit(rf_workflow, bake(model_recipe_prep, census_combined)) %>% 
-  predict(bake(model_recipe_prep, census_combined)) %>% 
-  bind_cols(bake(model_recipe_prep, census_combined)) %>% 
+full_predictions_binary <- fit(rf_workflow, juice(model_recipe_prep)) %>% 
+  predict(juice(model_recipe_prep)) %>% 
+  bind_cols(juice(model_recipe_prep)) %>% 
   mutate(type = as.factor(type),
          correct = type == .pred_class)
-
 
 full_predictions_binary_small <- full_predictions_binary %>% 
   select(GEOID, type, .pred_class, correct)
@@ -376,6 +303,7 @@ tracts %>%
 
 ## References
 
+https://juliasilge.com/blog/multinomial-volcano-eruptions/
 http://www.rebeccabarter.com/blog/2020-03-25_machine_learning/#split-into-traintest
 https://www.brodrigues.co/blog/2018-11-25-tidy_cv/
 https://agailloty.rbind.io/en/post/tidymodels/
