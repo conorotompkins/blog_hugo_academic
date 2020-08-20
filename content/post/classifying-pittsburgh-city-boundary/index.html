@@ -1,0 +1,374 @@
+---
+# Documentation: https://sourcethemes.com/academic/docs/managing-content/
+
+title: "Modeling the Pittsburgh City Boundary"
+subtitle: ""
+summary: ""
+authors: [Conor Tompkins]
+tags: [R, Pittsburgh, Allegheny County]
+categories: [R, Pittsburgh, Allegheny County]
+date: 2020-08-14T15:07:55-04:00
+lastmod: 2020-08-14T15:07:55-04:00
+featured: false
+draft: true
+
+# Featured image
+# To use, add an image named `featured.jpg/png` to your page's folder.
+# Focal points: Smart, Center, TopLeft, Top, TopRight, Left, Right, BottomLeft, Bottom, BottomRight.
+image:
+  caption: ""
+  focal_point: ""
+  preview_only: false
+
+# Projects (optional).
+#   Associate this post with one or more of your projects.
+#   Simply enter your project's folder or file name without extension.
+#   E.g. `projects = ["internal-project"]` references `content/project/deep-learning/index.md`.
+#   Otherwise, set `projects = []`.
+projects: []
+---
+
+
+
+<div id="introduction" class="section level2">
+<h2>Introduction</h2>
+<p>My goal is to create a classification model that can distinguish between tracts that are inside the city or outside the City of Pittsburgh. The border is interrupted by rivers, has an enclave, and is very irregular in general, which made this an interesting intellectual exercise.</p>
+<div id="city-of-pittsburgh-border" class="section level3">
+<h3>City of Pittsburgh Border</h3>
+<p>While Pittsburgh was founded in 1758, the city’s borders have changed many times due to annexation of surrounding municipalities. <a href="https://en.wikipedia.org/wiki/Allegheny,_Pennsylvania">This map</a> shows that what we call the North Side was previously Allegheny City, and was annexed into the city in 1907.
+<img src="https://upload.wikimedia.org/wikipedia/commons/f/fd/Allegheny_City.jpg" /></p>
+<p>Mt. Oliver is a geographic enclave that is completely surrounded by the City of Pittsburgh, but is a separate municipality. The borough has <a href="https://www.wesa.fm/post/how-mt-oliver-borough-eluded-city-pittsburgh-annexation#stream/0">resisted multiple annexation attempts</a>.
+<img src="mt_oliver.png" /></p>
+</div>
+<div id="modeling" class="section level3">
+<h3>Modeling</h3>
+<p>This code loads the packages I need, configures some options, and sets the seed.</p>
+<pre class="r"><code>#set up environment
+library(tidyverse)
+library(tidymodels)
+library(janitor)
+library(tidycensus)
+library(sf)
+library(hrbrthemes)
+library(GGally)
+
+theme_set(theme_ipsum(base_size = 15))
+
+options(scipen = 999, digits = 4, tigris_use_cache = TRUE)
+
+set.seed(1234)</code></pre>
+<p>I created a small Shiny app that let me select which tracts are inside the city borders. I will go over that in a future post. This loads the tracts from the Census API and pulls the results from the Shiny app.</p>
+<pre class="r"><code>#load data about census tracts
+tracts &lt;- get_decennial(year = 2010, state = &quot;PA&quot;, county = &quot;Allegheny County&quot;, 
+                        variables = &quot;P001001&quot;,
+                        geography = &quot;tract&quot;, geometry = TRUE)
+
+city_tracts &lt;- read_csv(&quot;data/selected_tracts.csv&quot;, col_types = cols(&quot;c&quot;, &quot;l&quot;)) %&gt;% 
+  filter(selected == TRUE)
+
+glimpse(city_tracts)</code></pre>
+<pre><code>## Rows: 137
+## Columns: 2
+## $ GEOID    &lt;chr&gt; &quot;42003310200&quot;, &quot;42003562900&quot;, &quot;42003310300&quot;, &quot;42003561600&quot;, …
+## $ selected &lt;lgl&gt; TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, …</code></pre>
+<p>This reads in the boundary shapefile and graphs it to show which tracts are in the city.</p>
+<pre class="r"><code>pgh_official_boundary &lt;- st_read(&quot;data/Pittsburgh_City_Boundary-shp&quot;) %&gt;% 
+  mutate(geography = &quot;City boundary&quot;) %&gt;% 
+  st_transform(crs = &quot;NAD83&quot;) %&gt;% 
+  st_cast(&quot;POLYGON&quot;) %&gt;% 
+  filter(FID != 7)</code></pre>
+<pre><code>## Reading layer `City_Boundary&#39; from data source `/Users/conortompkins/github_repos/blog_hugo_academic/content/post/classifying-pittsburgh-city-boundary/data/Pittsburgh_City_Boundary-shp&#39; using driver `ESRI Shapefile&#39;
+## Simple feature collection with 8 features and 8 fields
+## geometry type:  POLYGON
+## dimension:      XY
+## bbox:           xmin: -80.1 ymin: 40.36 xmax: -79.87 ymax: 40.5
+## geographic CRS: WGS 84</code></pre>
+<pre class="r"><code>tracts %&gt;% 
+  left_join(city_tracts) %&gt;% 
+  mutate(type = case_when(selected == TRUE ~ &quot;city&quot;,
+                          is.na(selected) ~ &quot;non_city&quot;)) %&gt;% 
+  ggplot() +
+  geom_sf(aes(fill = type), size = .1) +
+  geom_sf(data = pgh_official_boundary, color = &quot;white&quot;, linetype = 2, alpha = 0) +
+  theme_void()</code></pre>
+<p><img src="/post/classifying-pittsburgh-city-boundary/index_files/figure-html/unnamed-chunk-3-1.png" width="672" />
+This reads in the data I will consider for the model.</p>
+<pre class="r"><code>all_data &lt;- read_csv(&quot;data/combined_census_data_tract.csv&quot;, col_types = cols(.default = &quot;c&quot;)) %&gt;%
+  left_join(city_tracts) %&gt;% 
+  mutate(type = case_when(selected == TRUE ~ &quot;city&quot;,
+                          is.na(selected) ~ &quot;non_city&quot;)) %&gt;% 
+  mutate(across(pct_units_owned_loan:housed_population_density_pop_per_square_km, as.numeric)) %&gt;% 
+  select(GEOID, type, everything()) %&gt;%
+  select(-c(selected, total_population_housed))
+
+glimpse(all_data)</code></pre>
+<pre><code>## Rows: 402
+## Columns: 13
+## $ GEOID                                       &lt;chr&gt; &quot;42003010300&quot;, &quot;420030201…
+## $ type                                        &lt;chr&gt; &quot;city&quot;, &quot;city&quot;, &quot;city&quot;, &quot;…
+## $ pct_units_owned_loan                        &lt;dbl&gt; 0.137755, 0.119779, 0.076…
+## $ pct_units_owned_entire                      &lt;dbl&gt; 0.18367, 0.06619, 0.02110…
+## $ pct_units_rented                            &lt;dbl&gt; 0.6786, 0.8140, 0.9026, 0…
+## $ total_population                            &lt;dbl&gt; 6600, 3629, 616, 2256, 26…
+## $ pct_white                                   &lt;dbl&gt; 0.658333, 0.745660, 0.756…
+## $ pct_black                                   &lt;dbl&gt; 0.31167, 0.15982, 0.15584…
+## $ pct_asian                                   &lt;dbl&gt; 0.0110606, 0.0471204, 0.0…
+## $ pct_hispanic                                &lt;dbl&gt; 0.024394, 0.032791, 0.016…
+## $ workers                                     &lt;dbl&gt; 503, 1186, 409, 836, 538,…
+## $ jobs                                        &lt;dbl&gt; 6811, 82535, 8329, 1684, …
+## $ housed_population_density_pop_per_square_km &lt;dbl&gt; 682.7, 1511.3, 386.7, 320…</code></pre>
+<p>This plot compares all of the variables against each other. I used this to identify covariance and determine which variables should be excluded.</p>
+<pre class="r"><code>#eda
+pairwise_plot &lt;- all_data %&gt;% 
+  select(-c(GEOID)) %&gt;% 
+  ggpairs(aes(color = type)) +
+  theme(axis.text = element_text(size = 8))</code></pre>
+<p><img src="ggpairs_plot.png" />
+After reviewing this graph and considering things like covariance zero-variance, I will use these variables in the model:</p>
+<ul>
+<li>Housing
+<ul>
+<li>Percent of housing units owned outright</li>
+<li>Percent of housing units owned with a mortgage</li>
+<li>Percent of housing units rented</li>
+</ul></li>
+<li>Demographics
+<ul>
+<li>Percent of people in the tract that are
+<ul>
+<li>White</li>
+<li>Black</li>
+</ul></li>
+</ul></li>
+<li>Population density</li>
+<li>Economic data
+<ul>
+<li>Number of workers that live in the tract</li>
+<li>Number of jobs in the tract</li>
+</ul></li>
+</ul>
+<p>This finalizes the data I will use to build the model.</p>
+<pre class="r"><code>census_combined &lt;- all_data %&gt;% 
+  select(GEOID, type, 
+         pct_units_owned_loan, pct_units_owned_entire, pct_units_rented,
+         housed_population_density_pop_per_square_km,
+         pct_white, pct_black,
+         workers, jobs)
+
+glimpse(census_combined)</code></pre>
+<pre><code>## Rows: 402
+## Columns: 10
+## $ GEOID                                       &lt;chr&gt; &quot;42003010300&quot;, &quot;420030201…
+## $ type                                        &lt;chr&gt; &quot;city&quot;, &quot;city&quot;, &quot;city&quot;, &quot;…
+## $ pct_units_owned_loan                        &lt;dbl&gt; 0.137755, 0.119779, 0.076…
+## $ pct_units_owned_entire                      &lt;dbl&gt; 0.18367, 0.06619, 0.02110…
+## $ pct_units_rented                            &lt;dbl&gt; 0.6786, 0.8140, 0.9026, 0…
+## $ housed_population_density_pop_per_square_km &lt;dbl&gt; 682.7, 1511.3, 386.7, 320…
+## $ pct_white                                   &lt;dbl&gt; 0.658333, 0.745660, 0.756…
+## $ pct_black                                   &lt;dbl&gt; 0.31167, 0.15982, 0.15584…
+## $ workers                                     &lt;dbl&gt; 503, 1186, 409, 836, 538,…
+## $ jobs                                        &lt;dbl&gt; 6811, 82535, 8329, 1684, …</code></pre>
+<p>34% of the tracts are in the city, which is a slightly unbalanced dataset.</p>
+<pre class="r"><code>census_combined %&gt;% 
+  tabyl(type)</code></pre>
+<pre><code>##      type   n percent
+##      city 137  0.3408
+##  non_city 265  0.6592</code></pre>
+<p>Since the total amount of data available is small, I will bootstrap the data to try to achieve more stable results from the model. I stratify by <code>type</code> so that each bootstrap has ~34% <code>city</code> tracts. This generates 50 sets of data for the model to work with.</p>
+<pre class="r"><code>tract_boot &lt;- bootstraps(census_combined, strata = type, times = 50)
+
+tract_boot</code></pre>
+<pre><code>## # Bootstrap sampling using stratification 
+## # A tibble: 50 x 2
+##    splits            id         
+##    &lt;list&gt;            &lt;chr&gt;      
+##  1 &lt;split [402/152]&gt; Bootstrap01
+##  2 &lt;split [402/145]&gt; Bootstrap02
+##  3 &lt;split [402/147]&gt; Bootstrap03
+##  4 &lt;split [402/150]&gt; Bootstrap04
+##  5 &lt;split [402/144]&gt; Bootstrap05
+##  6 &lt;split [402/148]&gt; Bootstrap06
+##  7 &lt;split [402/152]&gt; Bootstrap07
+##  8 &lt;split [402/149]&gt; Bootstrap08
+##  9 &lt;split [402/143]&gt; Bootstrap09
+## 10 &lt;split [402/156]&gt; Bootstrap10
+## # … with 40 more rows</code></pre>
+<p>This code chunk prepares the data to be modeled. I define the formula and scale all the numeric variables to have a mean of 0 and standard deviation of 1.</p>
+<pre class="r"><code>#recipe
+model_recipe &lt;- recipe(type ~ ., data = census_combined) %&gt;% 
+  update_role(GEOID, new_role = &quot;id&quot;) %&gt;% 
+  step_normalize(all_predictors())
+
+model_recipe_prep &lt;- model_recipe %&gt;% 
+  prep(strings_as_factors = FALSE)
+
+model_recipe_prep %&gt;% 
+  summary()</code></pre>
+<pre><code>## # A tibble: 10 x 4
+##    variable                                    type    role      source  
+##    &lt;chr&gt;                                       &lt;chr&gt;   &lt;chr&gt;     &lt;chr&gt;   
+##  1 GEOID                                       nominal id        original
+##  2 pct_units_owned_loan                        numeric predictor original
+##  3 pct_units_owned_entire                      numeric predictor original
+##  4 pct_units_rented                            numeric predictor original
+##  5 housed_population_density_pop_per_square_km numeric predictor original
+##  6 pct_white                                   numeric predictor original
+##  7 pct_black                                   numeric predictor original
+##  8 workers                                     numeric predictor original
+##  9 jobs                                        numeric predictor original
+## 10 type                                        nominal outcome   original</code></pre>
+<p>This creates the model specifications for the two types of models I will use.</p>
+<pre class="r"><code>#logistic regression
+lm_model &lt;- logistic_reg(mode = &quot;classification&quot;) %&gt;% 
+  set_engine(&quot;glm&quot;)
+
+#random forest
+ranger_model &lt;- rand_forest(trees = 1000, mode = &quot;classification&quot;) %&gt;%
+  set_engine(&quot;ranger&quot;, importance = &quot;impurity&quot;)</code></pre>
+<p>This sets up a workflow object to fit a logistic regression model against the bootstrap resamples I created earlier.</p>
+<pre class="r"><code>#logistic regression
+lm_workflow &lt;- workflow() %&gt;% 
+  add_recipe(model_recipe_prep) %&gt;% 
+  add_model(lm_model)
+
+lm_res &lt;- lm_workflow %&gt;% 
+  fit_resamples(resamples = tract_boot) %&gt;% 
+  mutate(model = &quot;lm&quot;)
+
+lm_res %&gt;% 
+  collect_metrics()</code></pre>
+<pre><code>## # A tibble: 2 x 6
+##   model .metric  .estimator  mean     n std_err
+##   &lt;chr&gt; &lt;chr&gt;    &lt;chr&gt;      &lt;dbl&gt; &lt;int&gt;   &lt;dbl&gt;
+## 1 lm    accuracy binary     0.767    50 0.00408
+## 2 lm    roc_auc  binary     0.849    50 0.00434</code></pre>
+<p>The logistic regression gets ~76% accuracy, which is pretty good, but I want to know if a random forest could do better. This creates a workflow to fit a random forest model, and saves the predictions so I can use them later.</p>
+<pre class="r"><code>#rf
+rf_workflow &lt;- workflow() %&gt;% 
+  add_recipe(model_recipe_prep) %&gt;% 
+  add_model(ranger_model)
+
+rf_res &lt;- rf_workflow %&gt;% 
+  fit_resamples(resamples = tract_boot,
+                control = control_resamples(save_pred = TRUE)) %&gt;% 
+  mutate(model = &quot;rf&quot;)
+
+rf_res %&gt;% 
+  collect_metrics()</code></pre>
+<pre><code>## # A tibble: 2 x 6
+##   model .metric  .estimator  mean     n std_err
+##   &lt;chr&gt; &lt;chr&gt;    &lt;chr&gt;      &lt;dbl&gt; &lt;int&gt;   &lt;dbl&gt;
+## 1 rf    accuracy binary     0.811    50 0.00416
+## 2 rf    roc_auc  binary     0.888    50 0.00315</code></pre>
+<p>If you compare the results of the two models, the random forest model does much better than the logistic regression model.</p>
+<pre class="r"><code>combined_res &lt;- bind_rows(rf_res, lm_res)
+
+combined_res %&gt;% 
+  unnest(.metrics) %&gt;% 
+  ggplot(aes(.estimate, color = model, fill = model)) +
+  geom_density(alpha = .5) +
+  facet_wrap(~.metric)</code></pre>
+<p><img src="/post/classifying-pittsburgh-city-boundary/index_files/figure-html/unnamed-chunk-13-1.png" width="672" /></p>
+<p>This graph shows that the random forest model’s false negative and false positive rates are about the same.</p>
+<pre class="r"><code>rf_res %&gt;% 
+  collect_predictions() %&gt;% 
+  count(type, .pred_class) %&gt;% 
+  ggplot(aes(type, .pred_class, fill = n)) +
+  geom_tile() +
+  labs(x = &quot;Truth&quot;,
+       y = &quot;Prediction&quot;,
+       fill = &quot;Number of observations&quot;) +
+  scale_fill_continuous(label = scales::comma) +
+  coord_equal() +
+  theme(panel.grid.major = element_blank())</code></pre>
+<p><img src="/post/classifying-pittsburgh-city-boundary/index_files/figure-html/unnamed-chunk-14-1.png" width="672" /></p>
+<p>This fits the random forest model against the entire dataset to extract the variable importance metrics.</p>
+<pre class="r"><code>#variable importance
+var_imp &lt;- rf_workflow %&gt;% 
+  fit(juice(model_recipe_prep)) %&gt;% 
+  pull_workflow_fit() %&gt;% 
+  vip::vi()
+
+var_imp %&gt;%
+  mutate(Variable = fct_reorder(Variable, Importance)) %&gt;% 
+  ggplot(aes(Importance, Variable)) +
+  geom_point()</code></pre>
+<p><img src="/post/classifying-pittsburgh-city-boundary/index_files/figure-html/unnamed-chunk-15-1.png" width="672" /></p>
+<p>The top 3 variables are the percent of a tract’s population that is White, the percent of housing units that are owned with a loan, and the population density. This matches my subjective model of city vs. non-city characteristics. Areas that are low density with majority White demographics where people own their homes are typically outside of the city. This dynamic probably connected to the <a href="https://www.wesa.fm/post/pittsburgh-neighborhoods-and-schools-remain-segregated-how-did-it-start#stream/0">history of segregation and redlining</a> majority African American communities in Pittsburgh.</p>
+<p>Since the random forest model was fit against multiple bootstraps, I have multiple predictions per tract. I stratified the bootstraps by <code>type</code>, so the <code>city</code> and <code>non_city</code> tracts were sampled about the same number of times.</p>
+<pre class="r"><code>#extract probabilities from bootstrap resamples
+full_predictions &lt;- rf_res %&gt;% 
+  collect_predictions() %&gt;% 
+  mutate(correct = type == .pred_class) %&gt;%
+  left_join(census_combined %&gt;%
+              mutate(.row = row_number()))
+
+full_predictions %&gt;% 
+  count(type, GEOID) %&gt;% 
+  ggplot(aes(n, fill = type, color = type)) +
+  geom_density(alpha = .3) +
+  labs(x = &quot;Number of observations of a tract&quot;)</code></pre>
+<p><img src="/post/classifying-pittsburgh-city-boundary/index_files/figure-html/unnamed-chunk-16-1.png" width="672" /></p>
+<p>I am not solely interested in the top-line accuracy of the model. Since the city border is a geographic phenomenon, there may be interesting patterns in the geographic distribution of the model’s predictions that can be shown on a map.</p>
+<p>To map the data, I calculate the following metrics per tract:</p>
+<ul>
+<li>the percent of predictions that were correct</li>
+<li>the average % of how sure the model was that the tract is in the city</li>
+<li>the average % of how sure the model was that the tract is not in the city</li>
+<li>the number of times the tract was sampled</li>
+</ul>
+<pre class="r"><code>full_predictions_pct &lt;- full_predictions %&gt;% 
+  group_by(GEOID) %&gt;% 
+  summarize(pct_correct = mean(correct),
+            mean_city = mean(.pred_city),
+            mean_non_city = mean(.pred_non_city),
+            n = n())
+
+glimpse(full_predictions_pct)</code></pre>
+<pre><code>## Rows: 402
+## Columns: 5
+## $ GEOID         &lt;chr&gt; &quot;42003010300&quot;, &quot;42003020100&quot;, &quot;42003020300&quot;, &quot;420030305…
+## $ pct_correct   &lt;dbl&gt; 0.7826, 1.0000, 1.0000, 0.9524, 1.0000, 1.0000, 1.0000,…
+## $ mean_city     &lt;dbl&gt; 0.6628, 0.7872, 0.8361, 0.6943, 0.7044, 0.8039, 0.9141,…
+## $ mean_non_city &lt;dbl&gt; 0.33720, 0.21276, 0.16392, 0.30571, 0.29555, 0.19610, 0…
+## $ n             &lt;int&gt; 23, 13, 15, 21, 19, 17, 16, 19, 11, 20, 22, 21, 18, 22,…</code></pre>
+<p>This shows the % of correct predictions per tract. The model was very successful with the outlying tracts in the county, but struggled in Mt. Washington, the South Hills, and the Hazelwood/Greenfield area.</p>
+<pre class="r"><code>tracts %&gt;% 
+  left_join(full_predictions_pct) %&gt;% 
+  ggplot() +
+  geom_sf(aes(fill = pct_correct), size = NA) +
+  geom_sf(data = pgh_official_boundary, alpha = 0, color = &quot;black&quot;, size = 2) +
+  geom_sf(data = pgh_official_boundary, alpha = 0, color = &quot;yellow&quot;, size = .3) +
+  scale_fill_viridis_c(labels = scales::percent) +
+  labs(fill = &quot;% predictions correct&quot;) +
+  theme_void()</code></pre>
+<p><img src="/post/classifying-pittsburgh-city-boundary/index_files/figure-html/unnamed-chunk-18-1.png" width="672" /></p>
+<p>This shows the average % that the model thought the tract was in the city. The model was very confident that Oakland, Shadyside, and Squirrel Hill are in the city. The model also thought that many communities to the east and communities along the Monongahela River are in the city, specifically McKeesport and West Mifflin.</p>
+<pre class="r"><code>tracts %&gt;% 
+  left_join(full_predictions_pct) %&gt;% 
+  ggplot() +
+  geom_sf(aes(fill = mean_city), size = NA) +
+  geom_sf(data = pgh_official_boundary, alpha = 0, color = &quot;black&quot;, size = 2) +
+  geom_sf(data = pgh_official_boundary, alpha = 0, color = &quot;yellow&quot;, size = .3) +
+  scale_fill_viridis_c(labels = scales::percent) +
+  labs(fill = &#39;Average % predicted as &quot;city&quot;&#39;) +
+  theme_void()</code></pre>
+<p><img src="/post/classifying-pittsburgh-city-boundary/index_files/figure-html/unnamed-chunk-19-1.png" width="672" />
+To review, I think it would be difficult to create a model that almost perfectly captures the current city border, which is a result of political decisions, court cases, and other non-deterministic phenomena. In addition, white flight and the relative expansion of the suburbs during the collapse of the steel industry reshaped the Pittsburgh metro area. City borders are defined by people and politicians, not a clustering algorithm based on Census data. My experience is that many people that don’t technically live within the border consider themselves to be Pittsburghers. So what is a border, anyways?</p>
+</div>
+</div>
+<div id="references" class="section level2">
+<h2>References</h2>
+<ul>
+<li><a href="https://juliasilge.com/blog/multinomial-volcano-eruptions/" class="uri">https://juliasilge.com/blog/multinomial-volcano-eruptions/</a></li>
+<li><a href="http://www.rebeccabarter.com/blog/2020-03-25_machine_learning/#split-into-traintest" class="uri">http://www.rebeccabarter.com/blog/2020-03-25_machine_learning/#split-into-traintest</a></li>
+<li><a href="https://www.brodrigues.co/blog/2018-11-25-tidy_cv/" class="uri">https://www.brodrigues.co/blog/2018-11-25-tidy_cv/</a></li>
+<li><a href="https://agailloty.rbind.io/en/post/tidymodels/" class="uri">https://agailloty.rbind.io/en/post/tidymodels/</a></li>
+<li><a href="https://alison.rbind.io/post/2020-02-27-better-tidymodels/" class="uri">https://alison.rbind.io/post/2020-02-27-better-tidymodels/</a></li>
+<li><a href="https://hansjoerg.me/2020/02/09/tidymodels-for-machine-learning/" class="uri">https://hansjoerg.me/2020/02/09/tidymodels-for-machine-learning/</a></li>
+<li><a href="https://towardsdatascience.com/modelling-with-tidymodels-and-parsnip-bae2c01c131c" class="uri">https://towardsdatascience.com/modelling-with-tidymodels-and-parsnip-bae2c01c131c</a></li>
+<li><a href="https://www.benjaminsorensen.me/post/modeling-with-parsnip-and-tidymodels/" class="uri">https://www.benjaminsorensen.me/post/modeling-with-parsnip-and-tidymodels/</a></li>
+<li><a href="https://rviews.rstudio.com/2019/06/19/a-gentle-intro-to-tidymodels/" class="uri">https://rviews.rstudio.com/2019/06/19/a-gentle-intro-to-tidymodels/</a></li>
+<li><a href="https://en.wikipedia.org/wiki/Allegheny,_Pennsylvania" class="uri">https://en.wikipedia.org/wiki/Allegheny,_Pennsylvania</a></li>
+</ul>
+</div>
