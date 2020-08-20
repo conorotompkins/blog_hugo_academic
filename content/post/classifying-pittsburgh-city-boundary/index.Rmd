@@ -33,12 +33,19 @@ knitr::opts_chunk$set(echo = TRUE,
                       warning = FALSE)
 ```
 
-## Intro
+## Introduction
 
-My goal is to create a classification model that can distinguish between tracts that are inside the city or outside the city.
+My goal is to create a classification model that can distinguish between tracts that are inside the city or outside the City of Pittsburgh. The border is interrupted by rivers, has an enclave, and is very irregular in general, which made this an interesting intellectual exercise.
 
-History of Pitt border
+### City of Pittsburgh Border
 
+While Pittsburgh was founded in 1758, the city's borders have changed many times due to annexation of surrounding municipalities. [This map](https://en.wikipedia.org/wiki/Allegheny,_Pennsylvania) shows that what we call the North Side was previously Allegheny City, and was annexed into the city in 1907.
+![](https://upload.wikimedia.org/wikipedia/commons/f/fd/Allegheny_City.jpg)
+
+Mt. Oliver is a geographic enclave that is completely surrounded by the City of Pittsburgh, but is a separate municipality. The borough has [resisted multiple annexation attempts](https://www.wesa.fm/post/how-mt-oliver-borough-eluded-city-pittsburgh-annexation#stream/0).
+![](mt_oliver.png)
+
+### Modeling
 
 This code loads the packages I need, configures some options, and sets the seed.
 ```{r}
@@ -51,14 +58,14 @@ library(sf)
 library(hrbrthemes)
 library(GGally)
 
-theme_set(theme_ipsum(base_size = 20))
+theme_set(theme_ipsum(base_size = 15))
 
 options(scipen = 999, digits = 4, tigris_use_cache = TRUE)
 
 set.seed(1234)
 ```
 
-I created a small Shiny app that let me select which tracts are inside the city borders. I will go over that in a future post. This loads the tracts from the Census API and pulls the data from the Shiny app.
+I created a small Shiny app that let me select which tracts are inside the city borders. I will go over that in a future post. This loads the tracts from the Census API and pulls the results from the Shiny app.
 ```{r}
 #load data about census tracts
 tracts <- get_decennial(year = 2010, state = "PA", county = "Allegheny County", 
@@ -88,22 +95,7 @@ tracts %>%
   geom_sf(data = pgh_official_boundary, color = "white", linetype = 2, alpha = 0) +
   theme_void()
 ```
-
-This reads in all the data from the Census that I will consider for the model. I use the following types of data:
-
-* Housing
-  ** Percent of housing units owned outright
-  ** Percent of housing units owned with a mortgage
-  ** Percent of housing units rented
-* Demographics
-  ** Percent of people in the tract that are
-    *** White
-    *** Black
-* Population density
-* Economic data
-  ** Number of workers that live in the tract
-  ** Number of jobs in the tract
-
+This reads in the data I will consider for the model.
 ```{r}
 all_data <- read_csv("data/combined_census_data_tract.csv", col_types = cols(.default = "c")) %>%
   left_join(city_tracts) %>% 
@@ -125,7 +117,21 @@ pairwise_plot <- all_data %>%
   theme(axis.text = element_text(size = 8))
 ```
 
-insert pairwise plot here
+![](ggpairs_plot.png)
+After reviewing this graph and considering things like covariance zero-variance, I will use these variables in the model:
+
+* Housing
+  * Percent of housing units owned outright
+  * Percent of housing units owned with a mortgage
+  * Percent of housing units rented
+* Demographics
+  * Percent of people in the tract that are
+    * White
+    * Black
+* Population density
+* Economic data
+  * Number of workers that live in the tract
+  * Number of jobs in the tract
 
 This finalizes the data I will use to build the model.
 ```{r}
@@ -178,7 +184,7 @@ ranger_model <- rand_forest(trees = 1000, mode = "classification") %>%
 ```
 
 This sets up a workflow object to fit a logistic regression model against the bootstrap resamples I created earlier.
-```{r}
+```{r cache=TRUE}
 #logistic regression
 lm_workflow <- workflow() %>% 
   add_recipe(model_recipe_prep) %>% 
@@ -193,7 +199,7 @@ lm_res %>%
 ```
 
 The logistic regression gets ~76% accuracy, which is pretty good, but I want to know if a random forest could do better. This creates a workflow to fit a random forest model, and saves the predictions so I can use them later.
-```{r}
+```{r cache=TRUE}
 #rf
 rf_workflow <- workflow() %>% 
   add_recipe(model_recipe_prep) %>% 
@@ -219,7 +225,7 @@ combined_res %>%
   facet_wrap(~.metric)
 ```
 
-This matrix shows that the random forest model's false negative and false positive rates are about the same.
+This graph shows that the random forest model's false negative and false positive rates are about the same.
 ```{r}
 rf_res %>% 
   collect_predictions() %>% 
@@ -227,8 +233,11 @@ rf_res %>%
   ggplot(aes(type, .pred_class, fill = n)) +
   geom_tile() +
   labs(x = "Truth",
-       y = "Prediction") +
-  scale_fill_continuous(label = scales::comma)
+       y = "Prediction",
+       fill = "Number of observations") +
+  scale_fill_continuous(label = scales::comma) +
+  coord_equal() +
+  theme(panel.grid.major = element_blank())
 ```
 
 This fits the random forest model against the entire dataset to extract the variable importance metrics.
@@ -245,12 +254,11 @@ var_imp %>%
   geom_point()
 ```
 
-The top 3 variables are the percent of a tract's population that is White, the percent of housing units that are owned with a loan, and the population density. These variables help the model distinguish between `city` and `non_city` tracts.
+The top 3 variables are the percent of a tract's population that is White, the percent of housing units that are owned with a loan, and the population density. This matches my subjective model of city vs. non-city characteristics. Areas that are low density with majority White demographics where people own their homes are typically outside of the city. This dynamic probably connected to the [history of segregation and redlining](https://www.wesa.fm/post/pittsburgh-neighborhoods-and-schools-remain-segregated-how-did-it-start#stream/0) majority African American communities in Pittsburgh.
 
 Since the random forest model was fit against multiple bootstraps, I have multiple predictions per tract. I stratified the bootstraps by `type`, so the `city` and `non_city` tracts were sampled about the same number of times.
 ```{r}
-#predict on full dataset
-#probabilities
+#extract probabilities from bootstrap resamples
 full_predictions <- rf_res %>% 
   collect_predictions() %>% 
   mutate(correct = type == .pred_class) %>%
@@ -264,13 +272,13 @@ full_predictions %>%
   labs(x = "Number of observations of a tract")
 ```
 
-I am not solely interested in the top-line accuracy of the model. Since the city border is a geographic phenomenon, there may be interesting patterns in the geographic distribution of the model's predictions.
+I am not solely interested in the top-line accuracy of the model. Since the city border is a geographic phenomenon, there may be interesting patterns in the geographic distribution of the model's predictions that can be shown on a map.
 
-This calculates:
+To map the data, I calculate the following metrics per tract:
 
-* the percent of correct predictions per tract
-* the average % of how sure the model was that a tract is in the city
-* the average % of how sure the model was that a tract is not in the city
+* the percent of predictions that were correct
+* the average % of how sure the model was that the tract is in the city
+* the average % of how sure the model was that the tract is not in the city
 * the number of times the tract was sampled
 
 ```{r}
@@ -293,10 +301,11 @@ tracts %>%
   geom_sf(data = pgh_official_boundary, alpha = 0, color = "black", size = 2) +
   geom_sf(data = pgh_official_boundary, alpha = 0, color = "yellow", size = .3) +
   scale_fill_viridis_c(labels = scales::percent) +
+  labs(fill = "% predictions correct") +
   theme_void()
 ```
 
-This shows the average % that the model thought was in the city. The model was very confident that Oakland, Shadyside, and Squirrel Hill are in the city. The model also thought that many communities to the east and communities along the Monongahela River are in the city, specifically McKeesport and West Mifflin.
+This shows the average % that the model thought the tract was in the city. The model was very confident that Oakland, Shadyside, and Squirrel Hill are in the city. The model also thought that many communities to the east and communities along the Monongahela River are in the city, specifically McKeesport and West Mifflin.
 ```{r}
 tracts %>% 
   left_join(full_predictions_pct) %>% 
@@ -305,17 +314,20 @@ tracts %>%
   geom_sf(data = pgh_official_boundary, alpha = 0, color = "black", size = 2) +
   geom_sf(data = pgh_official_boundary, alpha = 0, color = "yellow", size = .3) +
   scale_fill_viridis_c(labels = scales::percent) +
+  labs(fill = 'Average % predicted as "city"') +
   theme_void()
 ```
+To review, I think it would be difficult to create a model that almost perfectly captures the current city border, which is a result of political decisions, court cases, and other non-deterministic phenomena. In addition, white flight and the relative expansion of the suburbs during the collapse of the steel industry reshaped the Pittsburgh metro area. City borders are defined by people and politicians, not a clustering algorithm based on Census data. My experience is that many people that don't technically live within the border consider themselves to be Pittsburghers. So what is a border, anyways?
 
 ## References
 
-https://juliasilge.com/blog/multinomial-volcano-eruptions/
-http://www.rebeccabarter.com/blog/2020-03-25_machine_learning/#split-into-traintest
-https://www.brodrigues.co/blog/2018-11-25-tidy_cv/
-https://agailloty.rbind.io/en/post/tidymodels/
-https://alison.rbind.io/post/2020-02-27-better-tidymodels/
-https://hansjoerg.me/2020/02/09/tidymodels-for-machine-learning/
-https://towardsdatascience.com/modelling-with-tidymodels-and-parsnip-bae2c01c131c
-https://www.benjaminsorensen.me/post/modeling-with-parsnip-and-tidymodels/
-https://rviews.rstudio.com/2019/06/19/a-gentle-intro-to-tidymodels/
+* https://juliasilge.com/blog/multinomial-volcano-eruptions/
+* http://www.rebeccabarter.com/blog/2020-03-25_machine_learning/#split-into-traintest
+* https://www.brodrigues.co/blog/2018-11-25-tidy_cv/
+* https://agailloty.rbind.io/en/post/tidymodels/
+* https://alison.rbind.io/post/2020-02-27-better-tidymodels/
+* https://hansjoerg.me/2020/02/09/tidymodels-for-machine-learning/
+* https://towardsdatascience.com/modelling-with-tidymodels-and-parsnip-bae2c01c131c
+* https://www.benjaminsorensen.me/post/modeling-with-parsnip-and-tidymodels/
+* https://rviews.rstudio.com/2019/06/19/a-gentle-intro-to-tidymodels/
+* https://en.wikipedia.org/wiki/Allegheny,_Pennsylvania
