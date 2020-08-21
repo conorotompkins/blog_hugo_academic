@@ -35,7 +35,7 @@ knitr::opts_chunk$set(echo = TRUE,
 
 ## Introduction
 
-My goal is to create a classification model that can distinguish between tracts that are inside the city or outside the City of Pittsburgh. The border is interrupted by rivers, has an enclave, and is very irregular in general, which made this an interesting intellectual exercise.
+My goal is to create a classification model that can distinguish between census tracts that are inside the city or outside the City of Pittsburgh. The border is interrupted by rivers, has an enclave, and is very irregular in general, which made this an interesting intellectual exercise.
 
 ### City of Pittsburgh Border
 
