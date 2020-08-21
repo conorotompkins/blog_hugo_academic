@@ -118,7 +118,7 @@ pairwise_plot <- all_data %>%
 ```
 
 ![](ggpairs_plot.png)
-After reviewing this graph and considering things like covariance zero-variance, I will use these variables in the model:
+After reviewing this graph and considering things like covariance and zero-variance, I will use these variables in the model:
 
 * Housing
   * Percent of housing units owned outright
@@ -151,7 +151,9 @@ census_combined %>%
   tabyl(type)
 ```
 
-Since the total amount of data available is small, I will bootstrap the data to try to achieve more stable results from the model. I stratify by `type` so that each bootstrap has ~34% `city` tracts. This generates 50 sets of data for the model to work with.
+Since the total amount of data available is small, I will bootstrap the data to try to achieve more stable results from the model. [Bootstrapping resamples the data with replacement](https://www.tidymodels.org/learn/statistics/bootstrap/), which creates multiple replicates of the original dataset with some variation due to sampling. I created a meme of my dog Quincy to illustrate the effect: ![](meme.jpg)
+
+I stratify by `type` so that each bootstrap has ~34% `city` tracts. This generates 50 sets of data for the model to work with.
 ```{r}
 tract_boot <- bootstraps(census_combined, strata = type, times = 50)
 
@@ -254,7 +256,7 @@ var_imp %>%
   geom_point()
 ```
 
-The top 3 variables are the percent of a tract's population that is White, the percent of housing units that are owned with a loan, and the population density. This matches my subjective model of city vs. non-city characteristics. Areas that are low density with majority White demographics where people own their homes are typically outside of the city. This dynamic probably connected to the [history of segregation and redlining](https://www.wesa.fm/post/pittsburgh-neighborhoods-and-schools-remain-segregated-how-did-it-start#stream/0) majority African American communities in Pittsburgh.
+The top 3 variables are the percent of a tract's population that is White, the percent of housing units that are owned with a loan, and the population density. This matches my subjective model of city vs. non-city characteristics. Areas that are low density with majority White demographics where people own their homes are typically outside of the city. This dynamic is probably connected to the [history of segregation and redlining](https://www.wesa.fm/post/pittsburgh-neighborhoods-and-schools-remain-segregated-how-did-it-start#stream/0) in majority African American communities in Pittsburgh.
 
 Since the random forest model was fit against multiple bootstraps, I have multiple predictions per tract. I stratified the bootstraps by `type`, so the `city` and `non_city` tracts were sampled about the same number of times.
 ```{r}
@@ -277,8 +279,8 @@ I am not solely interested in the top-line accuracy of the model. Since the city
 To map the data, I calculate the following metrics per tract:
 
 * the percent of predictions that were correct
-* the average % of how sure the model was that the tract is in the city
-* the average % of how sure the model was that the tract is not in the city
+* average city classification %
+* average non-city classification %
 * the number of times the tract was sampled
 
 ```{r}
@@ -292,7 +294,7 @@ full_predictions_pct <- full_predictions %>%
 glimpse(full_predictions_pct)
 ```
 
-This shows the % of correct predictions per tract. The model was very successful with the outlying tracts in the county, but struggled in Mt. Washington, the South Hills, and the Hazelwood/Greenfield area.
+This shows the % of correct predictions per tract. The model was very successful with the outlying tracts in the county, but struggled in Mt. Washington/Beechview/Brookline, the Hazelwood/Greenfield area, and Forest Hills towards Monroeville.
 ```{r}
 tracts %>% 
   left_join(full_predictions_pct) %>% 
@@ -305,7 +307,7 @@ tracts %>%
   theme_void()
 ```
 
-This shows the average % that the model thought the tract was in the city. The model was very confident that Oakland, Shadyside, and Squirrel Hill are in the city. The model also thought that many communities to the east and communities along the Monongahela River are in the city, specifically McKeesport and West Mifflin.
+This shows the average % that the model classified a tract as being in the city. The model was very confident that Oakland, Shadyside, and Squirrel Hill are in the city. The model also thought that many communities to the east and communities along the Monongahela River are in the city, specifically McKeesport and West Mifflin.
 ```{r}
 tracts %>% 
   left_join(full_predictions_pct) %>% 
@@ -314,10 +316,10 @@ tracts %>%
   geom_sf(data = pgh_official_boundary, alpha = 0, color = "black", size = 2) +
   geom_sf(data = pgh_official_boundary, alpha = 0, color = "yellow", size = .3) +
   scale_fill_viridis_c(labels = scales::percent) +
-  labs(fill = 'Average % predicted as "city"') +
+  labs(fill = "Average city classification %") +
   theme_void()
 ```
-To review, I think it would be difficult to create a model that almost perfectly captures the current city border, which is a result of political decisions, court cases, and other non-deterministic phenomena. In addition, white flight and the relative expansion of the suburbs during the collapse of the steel industry reshaped the Pittsburgh metro area. City borders are defined by people and politicians, not a clustering algorithm based on Census data. My experience is that many people that don't technically live within the border consider themselves to be Pittsburghers. So what is a border, anyways?
+To review, I think it would be difficult to create a model that almost perfectly captures the current city border, which is a result of political decisions, court cases, and other non-deterministic phenomena. In addition, white flight and the relative expansion of the suburbs during the collapse of the steel industry reshaped the Pittsburgh metro area. City borders are defined by people and politicians, not a clustering algorithm based on Census data (although that would be interesting). My experience is that many people that don't technically live within the border consider themselves to be Pittsburghers. So what is a border, anyways?
 
 ## References
 

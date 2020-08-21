@@ -124,7 +124,7 @@ pairwise_plot &lt;- all_data %&gt;%
   ggpairs(aes(color = type)) +
   theme(axis.text = element_text(size = 8))</code></pre>
 <p><img src="ggpairs_plot.png" />
-After reviewing this graph and considering things like covariance zero-variance, I will use these variables in the model:</p>
+After reviewing this graph and considering things like covariance and zero-variance, I will use these variables in the model:</p>
 <ul>
 <li>Housing
 <ul>
@@ -174,7 +174,8 @@ glimpse(census_combined)</code></pre>
 <pre><code>##      type   n percent
 ##      city 137  0.3408
 ##  non_city 265  0.6592</code></pre>
-<p>Since the total amount of data available is small, I will bootstrap the data to try to achieve more stable results from the model. I stratify by <code>type</code> so that each bootstrap has ~34% <code>city</code> tracts. This generates 50 sets of data for the model to work with.</p>
+<p>Since the total amount of data available is small, I will bootstrap the data to try to achieve more stable results from the model. <a href="https://www.tidymodels.org/learn/statistics/bootstrap/">Bootstrapping resamples the data with replacement</a>, which creates multiple replicates of the original dataset with some variation due to sampling. I created a meme of my dog Quincy to illustrate the effect: <img src="meme.jpg" /></p>
+<p>I stratify by <code>type</code> so that each bootstrap has ~34% <code>city</code> tracts. This generates 50 sets of data for the model to work with.</p>
 <pre class="r"><code>tract_boot &lt;- bootstraps(census_combined, strata = type, times = 50)
 
 tract_boot</code></pre>
@@ -294,7 +295,7 @@ var_imp %&gt;%
   ggplot(aes(Importance, Variable)) +
   geom_point()</code></pre>
 <p><img src="/post/classifying-pittsburgh-city-boundary/index_files/figure-html/unnamed-chunk-15-1.png" width="672" /></p>
-<p>The top 3 variables are the percent of a tract’s population that is White, the percent of housing units that are owned with a loan, and the population density. This matches my subjective model of city vs. non-city characteristics. Areas that are low density with majority White demographics where people own their homes are typically outside of the city. This dynamic probably connected to the <a href="https://www.wesa.fm/post/pittsburgh-neighborhoods-and-schools-remain-segregated-how-did-it-start#stream/0">history of segregation and redlining</a> majority African American communities in Pittsburgh.</p>
+<p>The top 3 variables are the percent of a tract’s population that is White, the percent of housing units that are owned with a loan, and the population density. This matches my subjective model of city vs. non-city characteristics. Areas that are low density with majority White demographics where people own their homes are typically outside of the city. This dynamic is probably connected to the <a href="https://www.wesa.fm/post/pittsburgh-neighborhoods-and-schools-remain-segregated-how-did-it-start#stream/0">history of segregation and redlining</a> in majority African American communities in Pittsburgh.</p>
 <p>Since the random forest model was fit against multiple bootstraps, I have multiple predictions per tract. I stratified the bootstraps by <code>type</code>, so the <code>city</code> and <code>non_city</code> tracts were sampled about the same number of times.</p>
 <pre class="r"><code>#extract probabilities from bootstrap resamples
 full_predictions &lt;- rf_res %&gt;% 
@@ -313,8 +314,8 @@ full_predictions %&gt;%
 <p>To map the data, I calculate the following metrics per tract:</p>
 <ul>
 <li>the percent of predictions that were correct</li>
-<li>the average % of how sure the model was that the tract is in the city</li>
-<li>the average % of how sure the model was that the tract is not in the city</li>
+<li>average city classification %</li>
+<li>average non-city classification %</li>
 <li>the number of times the tract was sampled</li>
 </ul>
 <pre class="r"><code>full_predictions_pct &lt;- full_predictions %&gt;% 
@@ -332,7 +333,7 @@ glimpse(full_predictions_pct)</code></pre>
 ## $ mean_city     &lt;dbl&gt; 0.6628, 0.7872, 0.8361, 0.6943, 0.7044, 0.8039, 0.9141,…
 ## $ mean_non_city &lt;dbl&gt; 0.33720, 0.21276, 0.16392, 0.30571, 0.29555, 0.19610, 0…
 ## $ n             &lt;int&gt; 23, 13, 15, 21, 19, 17, 16, 19, 11, 20, 22, 21, 18, 22,…</code></pre>
-<p>This shows the % of correct predictions per tract. The model was very successful with the outlying tracts in the county, but struggled in Mt. Washington, the South Hills, and the Hazelwood/Greenfield area.</p>
+<p>This shows the % of correct predictions per tract. The model was very successful with the outlying tracts in the county, but struggled in Mt. Washington/Beechview/Brookline, the Hazelwood/Greenfield area, and Forest Hills towards Monroeville.</p>
 <pre class="r"><code>tracts %&gt;% 
   left_join(full_predictions_pct) %&gt;% 
   ggplot() +
@@ -343,7 +344,7 @@ glimpse(full_predictions_pct)</code></pre>
   labs(fill = &quot;% predictions correct&quot;) +
   theme_void()</code></pre>
 <p><img src="/post/classifying-pittsburgh-city-boundary/index_files/figure-html/unnamed-chunk-18-1.png" width="672" /></p>
-<p>This shows the average % that the model thought the tract was in the city. The model was very confident that Oakland, Shadyside, and Squirrel Hill are in the city. The model also thought that many communities to the east and communities along the Monongahela River are in the city, specifically McKeesport and West Mifflin.</p>
+<p>This shows the average % that the model classified a tract as being in the city. The model was very confident that Oakland, Shadyside, and Squirrel Hill are in the city. The model also thought that many communities to the east and communities along the Monongahela River are in the city, specifically McKeesport and West Mifflin.</p>
 <pre class="r"><code>tracts %&gt;% 
   left_join(full_predictions_pct) %&gt;% 
   ggplot() +
@@ -351,10 +352,10 @@ glimpse(full_predictions_pct)</code></pre>
   geom_sf(data = pgh_official_boundary, alpha = 0, color = &quot;black&quot;, size = 2) +
   geom_sf(data = pgh_official_boundary, alpha = 0, color = &quot;yellow&quot;, size = .3) +
   scale_fill_viridis_c(labels = scales::percent) +
-  labs(fill = &#39;Average % predicted as &quot;city&quot;&#39;) +
+  labs(fill = &quot;Average city classification %&quot;) +
   theme_void()</code></pre>
 <p><img src="/post/classifying-pittsburgh-city-boundary/index_files/figure-html/unnamed-chunk-19-1.png" width="672" />
-To review, I think it would be difficult to create a model that almost perfectly captures the current city border, which is a result of political decisions, court cases, and other non-deterministic phenomena. In addition, white flight and the relative expansion of the suburbs during the collapse of the steel industry reshaped the Pittsburgh metro area. City borders are defined by people and politicians, not a clustering algorithm based on Census data. My experience is that many people that don’t technically live within the border consider themselves to be Pittsburghers. So what is a border, anyways?</p>
+To review, I think it would be difficult to create a model that almost perfectly captures the current city border, which is a result of political decisions, court cases, and other non-deterministic phenomena. In addition, white flight and the relative expansion of the suburbs during the collapse of the steel industry reshaped the Pittsburgh metro area. City borders are defined by people and politicians, not a clustering algorithm based on Census data (although that would be interesting). My experience is that many people that don’t technically live within the border consider themselves to be Pittsburghers. So what is a border, anyways?</p>
 </div>
 </div>
 <div id="references" class="section level2">
