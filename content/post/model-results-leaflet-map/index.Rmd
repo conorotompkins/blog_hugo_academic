@@ -28,12 +28,13 @@ image:
 projects: []
 ---
 
+Last Friday I released a classification model that attempted to identify which census tracts in Allegheny County fall within the border of the City of Pittsburgh. As with most models, I think you can learn the most when you investigate the cases where the model failed. I made an interactive Leaflet map to help me to interrogate the model's results. It includes the average city classification % and the model's correct classification % for each tract, as well as the census data that was used to train the model. Make sure to click the "View Fullscreen" button in the top left corner to see more of the map.
+
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE,
+knitr::opts_chunk$set(echo = FALSE,
                       message = FALSE,
                       warning = FALSE)
 ```
-
 ```{r}
 library(tidyverse)
 library(tidycensus)
@@ -60,14 +61,15 @@ full_predictions_small <- full_predictions %>%
   left_join(tract_info) %>% 
   mutate(across(c(mean_city, matches("pct")), ~. * 100))
 
-glimpse(full_predictions_small)
+#glimpse(full_predictions_small)
 
 tracts <- get_decennial(year = 2010, state = "PA", county = "Allegheny County", 
                         variables = "P001001",
                         geography = "tract", geometry = TRUE) %>% 
   st_transform(crs = "WGS84")
 
-pgh_official_boundary <- st_read("data/Pittsburgh_City_Boundary-shp") %>% 
+pgh_official_boundary <- st_read("data/Pittsburgh_City_Boundary-shp",
+                                 quiet = TRUE) %>% 
   mutate(geography = "City boundary") %>% 
   st_transform(crs = "WGS84") %>% 
   st_cast("POLYGON") %>% 
@@ -78,6 +80,9 @@ tract_pred <- tracts %>%
 ```
 
 ```{r}
+border_lines <- pgh_official_boundary %>% 
+  st_cast("LINESTRING")
+
 bounds <- tracts %>% st_bbox() %>% unlist()
 
 names(bounds) <- NULL
@@ -114,10 +119,9 @@ map <- leaflet(tract_pred) %>%
                    group = "Toner (default)",
                    options = providerTileOptions(minZoom = 10)) %>%
   addTiles(group = "OSM") %>%
-  addMapPane("Census tracts", zIndex = 400) %>% # shown below ames_circles               
-  addMapPane("City boundary", zIndex = 490) %>% # shown above ames_lines 
-  addPolygons(#data = tract_pred,
-              weight = .5,
+  addMapPane("Census tracts", zIndex = 400) %>%              
+  addMapPane("City boundary", zIndex = 490) %>%
+  addPolygons(weight = .5,
               color = "black",
               fillColor = ~prediction_palette(mean_city),
               fillOpacity = .8,
@@ -144,21 +148,19 @@ map <- leaflet(tract_pred) %>%
             position = "bottomright",
             
             group = "Legend") %>% 
-  addPolylines(data = pgh_official_boundary,
-               weight = 10,
-               stroke = TRUE,
-               color = "black",
-               
+  addPolylines(data = border_lines,
+              weight = 10,
+              stroke = TRUE,
+              color = "black",
                #
                
                group = "City boundary",
                options = pathOptions(pane = "City boundary")
                ) %>% 
-  addPolylines(data = pgh_official_boundary,
-               weight = 2,
-               stroke = TRUE,
-               color = "yellow",
-               
+  addPolylines(data = border_lines,
+              weight = 2,
+              stroke = TRUE,
+              color = "yellow",
                #
                
                group = "City boundary",
@@ -171,6 +173,6 @@ map <- leaflet(tract_pred) %>%
   ) %>% 
   addFullscreenControl()
 
-map
-#frameWidget(map)
+#map
+frameWidget(map, options=frameOptions(allowfullscreen = TRUE))
 ```
