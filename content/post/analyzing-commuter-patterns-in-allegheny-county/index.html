@@ -1,0 +1,693 @@
+---
+# Documentation: https://sourcethemes.com/academic/docs/managing-content/
+
+title: "Analyzing Commuter Patterns in Allegheny County"
+subtitle: ""
+summary: ""
+authors: [Conor Tompkins]
+tags: [R, Pittsburgh, Allegheny County, Commuters]
+categories: [R, Pittsburgh, Allegheny County, Commuters]
+date: 2019-11-11
+lastmod: 2020-08-24T11:29:31-04:00
+featured: false
+draft: false
+
+# Featured image
+# To use, add an image named `featured.jpg/png` to your page's folder.
+# Focal points: Smart, Center, TopLeft, Top, TopRight, Left, Right, BottomLeft, Bottom, BottomRight.
+image:
+  caption: ""
+  focal_point: ""
+  preview_only: false
+
+# Projects (optional).
+#   Associate this post with one or more of your projects.
+#   Simply enter your project's folder or file name without extension.
+#   E.g. `projects = ["internal-project"]` references `content/project/deep-learning/index.md`.
+#   Otherwise, set `projects = []`.
+projects: []
+---
+
+
+
+<p>Note: high-res images of the main graphs from this post are available <a href="https://raw.githubusercontent.com/conorotompkins/lodes/master/output/images/p1.png">here</a>, <a href="https://raw.githubusercontent.com/conorotompkins/lodes/master/output/images/p2.png">here</a>, <a href="https://raw.githubusercontent.com/conorotompkins/lodes/master/output/images/p3.png">here</a>, and <a href="https://raw.githubusercontent.com/conorotompkins/lodes/master/output/images/p4.png">here</a>.</p>
+<div id="section" class="section level3">
+<h3></h3>
+<p>In this post I will use networks plots to analyze patterns of commuters in Allegheny County. I use the LEHD Origin-Destination Employment Statistics (LODES) <a href="https://lehd.ces.census.gov/data/">dataset</a> provided by the U.S. Census Bureau. This dataset contains summarized and anonymized estimate data regarding where people live and work. I use this data to map where Allegheny County residents live and work.</p>
+<p>In my analysis I use many of the standard tidyverse packages, sf, tidygraph, and ggraph.</p>
+<pre class="r"><code>library(tidyverse)
+library(sf)
+library(tigris)
+library(tidycensus)
+library(tidygraph)
+library(ggraph)</code></pre>
+<p>The first step is to read in the geographies crosswalk and the census tract geographies.</p>
+<pre class="r"><code>geo_crosswalk &lt;- read_csv(&quot;data/pa_xwalk.csv.gz&quot;, col_types = cols(.default = &quot;c&quot;))
+
+allegheny_tracts &lt;- get_decennial(geography = &quot;tract&quot;,
+                           variables = c(total_pop = &quot;P001001&quot;),
+                           state = &quot;PA&quot;,
+                           county = &quot;Allegheny County&quot;,
+                           geometry = TRUE,
+                           output = &quot;wide&quot;)
+
+st_erase &lt;- function(x, y) {
+  st_difference(x, st_union(st_combine(y)))
+}
+
+rivers &lt;- area_water(&quot;PA&quot;, &quot;Allegheny&quot;, class = &quot;sf&quot;)</code></pre>
+<p>This shows the outlines of the tracts used in the analysis.</p>
+<pre class="r"><code>allegheny_tracts %&gt;% 
+  ggplot() +
+    geom_sf()</code></pre>
+<p><img src="/post/analyzing-commuter-patterns-in-allegheny-county/index_files/figure-html/unnamed-chunk-4-1.png" width="672" /></p>
+<p>The crosswalk file contains keys to join a variety of geographies.</p>
+<pre class="r"><code>geo_crosswalk</code></pre>
+<pre><code>## # A tibble: 421,545 x 43
+##    tabblk2010 st    stusps stname cty   ctyname trct  trctname bgrp  bgrpname
+##    &lt;chr&gt;      &lt;chr&gt; &lt;chr&gt;  &lt;chr&gt;  &lt;chr&gt; &lt;chr&gt;   &lt;chr&gt; &lt;chr&gt;    &lt;chr&gt; &lt;chr&gt;   
+##  1 420010301… 42    PA     Penns… 42001 Adams … 4200… 301.01 … 4200… 1 (Trac…
+##  2 420010301… 42    PA     Penns… 42001 Adams … 4200… 301.01 … 4200… 1 (Trac…
+##  3 420010301… 42    PA     Penns… 42001 Adams … 4200… 301.01 … 4200… 1 (Trac…
+##  4 420010301… 42    PA     Penns… 42001 Adams … 4200… 301.01 … 4200… 1 (Trac…
+##  5 420010301… 42    PA     Penns… 42001 Adams … 4200… 301.01 … 4200… 1 (Trac…
+##  6 420010301… 42    PA     Penns… 42001 Adams … 4200… 301.01 … 4200… 1 (Trac…
+##  7 420010301… 42    PA     Penns… 42001 Adams … 4200… 301.01 … 4200… 1 (Trac…
+##  8 420010301… 42    PA     Penns… 42001 Adams … 4200… 301.01 … 4200… 1 (Trac…
+##  9 420010301… 42    PA     Penns… 42001 Adams … 4200… 301.01 … 4200… 1 (Trac…
+## 10 420010301… 42    PA     Penns… 42001 Adams … 4200… 301.01 … 4200… 1 (Trac…
+## # … with 421,535 more rows, and 33 more variables: cbsa &lt;chr&gt;, cbsaname &lt;chr&gt;,
+## #   zcta &lt;chr&gt;, zctaname &lt;chr&gt;, stplc &lt;chr&gt;, stplcname &lt;chr&gt;, ctycsub &lt;chr&gt;,
+## #   ctycsubname &lt;chr&gt;, stcd115 &lt;chr&gt;, stcd115name &lt;chr&gt;, stsldl &lt;chr&gt;,
+## #   stsldlname &lt;chr&gt;, stsldu &lt;chr&gt;, stslduname &lt;chr&gt;, stschool &lt;chr&gt;,
+## #   stschoolname &lt;chr&gt;, stsecon &lt;chr&gt;, stseconname &lt;chr&gt;, trib &lt;chr&gt;,
+## #   tribname &lt;chr&gt;, tsub &lt;chr&gt;, tsubname &lt;chr&gt;, stanrc &lt;chr&gt;, stanrcname &lt;chr&gt;,
+## #   necta &lt;chr&gt;, nectaname &lt;chr&gt;, mil &lt;chr&gt;, milname &lt;chr&gt;, stwib &lt;chr&gt;,
+## #   stwibname &lt;chr&gt;, blklatdd &lt;chr&gt;, blklondd &lt;chr&gt;, createdate &lt;chr&gt;</code></pre>
+<p>Next I read in the main LODES data. This is a big file, so it takes a moment.</p>
+<pre class="r"><code>df &lt;- read_csv(&quot;data/pa_od_main_JT00_2015.csv.gz&quot;, col_types = cols(.default = &quot;c&quot;)) %&gt;% 
+  mutate(S000 = as.numeric(S000)) %&gt;% 
+  select(h_geocode, w_geocode, S000)
+
+df</code></pre>
+<pre><code>## # A tibble: 4,961,712 x 3
+##    h_geocode       w_geocode        S000
+##    &lt;chr&gt;           &lt;chr&gt;           &lt;dbl&gt;
+##  1 420010303001089 420010301011013     1
+##  2 420410126001030 420010301011013     1
+##  3 421330217111050 420010301011013     1
+##  4 420010301011029 420010301011016     1
+##  5 420010301011063 420010301011016     1
+##  6 420010301011090 420010301011016     1
+##  7 420010302001079 420010301011016     1
+##  8 420010302001089 420010301011016     1
+##  9 420010304003043 420010301011016     1
+## 10 420010307002014 420010301011016     1
+## # … with 4,961,702 more rows</code></pre>
+<p>Next I summarize the number of commuters per home-work tract combination. The original file uses census block codes, which are too granular for this analysis. I link the blocks to census tracts and aggregate to that level.</p>
+<pre class="r"><code>df_tracts_summarized &lt;- df %&gt;% 
+  group_by(h_geocode, w_geocode) %&gt;% 
+  summarize(commuters = sum(S000)) %&gt;% 
+  ungroup() %&gt;% 
+  arrange(desc(commuters))
+
+df_tracts_summarized &lt;- df_tracts_summarized %&gt;% 
+  left_join(geo_crosswalk %&gt;% select(tabblk2010, trct), by = c(&quot;h_geocode&quot; = &quot;tabblk2010&quot;)) %&gt;% 
+  rename(h_tract = trct) %&gt;% 
+  left_join(geo_crosswalk %&gt;% select(tabblk2010, trct), by = c(&quot;w_geocode&quot; = &quot;tabblk2010&quot;)) %&gt;% 
+  rename(w_tract = trct)
+
+df_tracts_summarized &lt;- df_tracts_summarized %&gt;% 
+  group_by(h_tract, w_tract) %&gt;% 
+  summarize(commuters = sum(commuters)) %&gt;% 
+  ungroup() %&gt;% 
+  arrange(desc(commuters))
+
+df_tracts_summarized &lt;- df_tracts_summarized %&gt;% 
+  semi_join(allegheny_tracts, by = c(&quot;h_tract&quot; = &quot;GEOID&quot;)) %&gt;% 
+  semi_join(allegheny_tracts, by = c(&quot;w_tract&quot; = &quot;GEOID&quot;))</code></pre>
+<p>This code removes rows where the commuter lives and works in the same tract.</p>
+<pre class="r"><code>df_tracts_summarized &lt;- df_tracts_summarized %&gt;% 
+  arrange(h_tract) %&gt;% 
+  na.omit() %&gt;% 
+  filter(!(h_tract == w_tract))</code></pre>
+<p>This code finds the center of each tract, which I use as the nodes in the network plots.</p>
+<pre class="r"><code>allegheny_tracts &lt;- allegheny_tracts %&gt;% 
+  arrange(GEOID)
+
+allegheny_tracts_centroids &lt;- cbind(allegheny_tracts,
+                                    st_coordinates(st_centroid(allegheny_tracts))) %&gt;% 
+  st_set_geometry(NULL) %&gt;% 
+  as_tibble() %&gt;% 
+  rename(x = X,
+         y = Y) %&gt;% 
+  select(GEOID, x, y)</code></pre>
+<p>This shows that the centroids correctly appear in the center of each tract.</p>
+<pre class="r"><code>allegheny_tracts %&gt;% 
+  ggplot() +
+    geom_sf() +
+    geom_point(data = allegheny_tracts_centroids, aes(x, y), size = .2)</code></pre>
+<p><img src="/post/analyzing-commuter-patterns-in-allegheny-county/index_files/figure-html/unnamed-chunk-10-1.png" width="672" /></p>
+</div>
+<div id="eda" class="section level2">
+<h2>EDA</h2>
+<p>First, I do some exploratory analysis of the number of commuters in/out per tract. Since we cannot join the census geography dataframe to the LODES data directly, I reverse engineer the process by splitting the data into separate “home” and “work” dataframes, and then joining the census geography dataframe to those dataframes.</p>
+<pre class="r"><code>df_home &lt;- df_tracts_summarized %&gt;% 
+  rename(tract = h_tract,
+         commuters_out = commuters) %&gt;% 
+  select(-w_tract) %&gt;% 
+  group_by(tract) %&gt;% 
+  summarize(commuters_out = sum(commuters_out))
+
+df_work &lt;- df_tracts_summarized %&gt;% 
+  rename(tract = w_tract,
+         commuters_in = commuters) %&gt;% 
+  select(-h_tract) %&gt;% 
+  group_by(tract) %&gt;% 
+  summarize(commuters_in = sum(commuters_in))</code></pre>
+<p>This checks that there are no duplicate tracts in either dataframe:</p>
+<pre class="r"><code>df_home %&gt;% 
+  count(tract, sort = TRUE) %&gt;% 
+  filter(n &gt; 1)</code></pre>
+<pre><code>## # A tibble: 0 x 2
+## # … with 2 variables: tract &lt;chr&gt;, n &lt;int&gt;</code></pre>
+<pre class="r"><code>df_home %&gt;% 
+  count(tract, sort = TRUE) %&gt;% 
+  filter(n &gt; 1)</code></pre>
+<pre><code>## # A tibble: 0 x 2
+## # … with 2 variables: tract &lt;chr&gt;, n &lt;int&gt;</code></pre>
+<p>This joins the separate dataframes back to the census geography dataframe:</p>
+<pre class="r"><code>allegheny_tracts &lt;- allegheny_tracts %&gt;% 
+  left_join(df_home, by = c(&quot;GEOID&quot; = &quot;tract&quot;)) %&gt;% 
+  left_join(df_work, by = c(&quot;GEOID&quot; = &quot;tract&quot;)) %&gt;% 
+  replace_na(list(commuters_in = 0))</code></pre>
+<p>The tract with many more commuters “in” is downtown Pittsburgh.</p>
+<pre class="r"><code>allegheny_tracts %&gt;% 
+  ggplot(aes(commuters_out, commuters_in, label = NAME)) +
+  geom_point() +
+  theme_bw()</code></pre>
+<p><img src="/post/analyzing-commuter-patterns-in-allegheny-county/index_files/figure-html/unnamed-chunk-14-1.png" width="672" /></p>
+<pre class="r"><code>allegheny_tracts %&gt;% 
+  ggplot() +
+  geom_sf(aes(fill = commuters_in), color = NA) +
+  scale_fill_viridis_c() +
+  theme_graph()</code></pre>
+<p><img src="/post/analyzing-commuter-patterns-in-allegheny-county/index_files/figure-html/unnamed-chunk-15-1.png" width="672" /></p>
+<p>This shows which tracts have the most outflow of commuters:</p>
+<pre class="r"><code>allegheny_tracts %&gt;% 
+  ggplot() +
+  geom_sf(aes(fill = commuters_out), color = NA) +
+  scale_fill_viridis_c() +
+  theme_graph()</code></pre>
+<p><img src="/post/analyzing-commuter-patterns-in-allegheny-county/index_files/figure-html/unnamed-chunk-16-1.png" width="672" /></p>
+<p>The outflow of commuters tracks with the population of the tract, with some exceptions.</p>
+<pre class="r"><code>allegheny_tracts %&gt;% 
+  ggplot(aes(commuters_out, total_pop)) +
+  geom_point() +
+  theme_bw()</code></pre>
+<p><img src="/post/analyzing-commuter-patterns-in-allegheny-county/index_files/figure-html/unnamed-chunk-17-1.png" width="672" /></p>
+<p>Downtown Pittsburgh dominates in terms of inflow vs. outflow differential.</p>
+<pre class="r"><code>allegheny_tracts %&gt;% 
+  mutate(diff = commuters_in - commuters_out) %&gt;% 
+  ggplot() +
+    geom_sf(aes(fill = diff), color = NA) +
+    scale_fill_viridis_c(&quot;Commuters in minus commuters out&quot;, direction = 1) +
+    theme_graph()</code></pre>
+<p><img src="/post/analyzing-commuter-patterns-in-allegheny-county/index_files/figure-html/unnamed-chunk-18-1.png" width="672" /></p>
+</div>
+<div id="set-up-main-graph" class="section level2">
+<h2>Set up main graph</h2>
+<p>With the exploratory analysis done, I move on to the main task of making a geographic network plot where the nodes are the center of each census tract.</p>
+<p>First, I set a minimum threshhold for the number of commuters flowing between two tracts. Then, I transform the <code>df_tracts_summarized</code> data into a <code>tbl_graph</code> object, which lets it be used for network analysis.</p>
+<pre class="r"><code>minimum_commuters &lt;- 100
+
+g &lt;- df_tracts_summarized %&gt;% 
+  as_tbl_graph(directed = TRUE)
+
+g</code></pre>
+<pre><code>## # A tbl_graph: 402 nodes and 74169 edges
+## #
+## # A directed simple graph with 1 component
+## #
+## # Node Data: 402 x 1 (active)
+##   name       
+##   &lt;chr&gt;      
+## 1 42003010300
+## 2 42003020100
+## 3 42003020300
+## 4 42003030500
+## 5 42003040200
+## 6 42003040400
+## # … with 396 more rows
+## #
+## # Edge Data: 74,169 x 3
+##    from    to commuters
+##   &lt;int&gt; &lt;int&gt;     &lt;dbl&gt;
+## 1     1     2        73
+## 2     1     5        22
+## 3     1    64        15
+## # … with 74,166 more rows</code></pre>
+<p>The result is a list of two dataframes; one for the nodes, one for the edges.</p>
+<p>This filters out the edges that do not meet the minimum threshhold.</p>
+<pre class="r"><code>g_main &lt;- g %&gt;% 
+  activate(edges) %&gt;% 
+  filter(commuters &gt; minimum_commuters)
+
+g_main</code></pre>
+<pre><code>## # A tbl_graph: 402 nodes and 358 edges
+## #
+## # A directed simple graph with 138 components
+## #
+## # Edge Data: 358 x 3 (active)
+##    from    to commuters
+##   &lt;int&gt; &lt;int&gt;     &lt;dbl&gt;
+## 1     4     2       142
+## 2    10     2       103
+## 3    11     2       142
+## 4    15     2       178
+## 5    16     2       101
+## 6    17     2       115
+## # … with 352 more rows
+## #
+## # Node Data: 402 x 1
+##   name       
+##   &lt;chr&gt;      
+## 1 42003010300
+## 2 42003020100
+## 3 42003020300
+## # … with 399 more rows</code></pre>
+<p>This shows the edges with the most commuters:</p>
+<pre class="r"><code>g_main %&gt;% 
+  activate(edges) %&gt;% 
+  arrange(desc(commuters))</code></pre>
+<pre><code>## # A tbl_graph: 402 nodes and 358 edges
+## #
+## # A directed simple graph with 138 components
+## #
+## # Edge Data: 358 x 3 (active)
+##    from    to commuters
+##   &lt;int&gt; &lt;int&gt;     &lt;dbl&gt;
+## 1   122     2       551
+## 2    75     2       483
+## 3   125     2       440
+## 4    65     2       406
+## 5    79     2       393
+## 6   127     2       389
+## # … with 352 more rows
+## #
+## # Node Data: 402 x 1
+##   name       
+##   &lt;chr&gt;      
+## 1 42003010300
+## 2 42003020100
+## 3 42003020300
+## # … with 399 more rows</code></pre>
+<p>This code sets the nodes for the graph at the center of each census tract and creates a manual layout that the network plot will use.</p>
+<pre class="r"><code>node_pos &lt;- allegheny_tracts_centroids
+
+manual_layout &lt;- create_layout(graph = g_main,
+                               layout = node_pos)</code></pre>
+<pre><code>## # A tibble: 402 x 7
+##    GEOID           x     y name        .ggraph.orig_index .ggraph.index circular
+##    &lt;chr&gt;       &lt;dbl&gt; &lt;dbl&gt; &lt;chr&gt;                    &lt;int&gt;         &lt;int&gt; &lt;lgl&gt;   
+##  1 42003010300 -80.0  40.4 42003010300                  1             1 FALSE   
+##  2 42003020100 -80.0  40.4 42003020100                  2             2 FALSE   
+##  3 42003020300 -80.0  40.5 42003020300                  3             3 FALSE   
+##  4 42003030500 -80.0  40.4 42003030500                  4             4 FALSE   
+##  5 42003040200 -80.0  40.4 42003040200                  5             5 FALSE   
+##  6 42003040400 -79.9  40.4 42003040400                  6             6 FALSE   
+##  7 42003040500 -80.0  40.4 42003040500                  7             7 FALSE   
+##  8 42003040600 -80.0  40.4 42003040600                  8             8 FALSE   
+##  9 42003040900 -80.0  40.4 42003040900                  9             9 FALSE   
+## 10 42003050100 -80.0  40.4 42003050100                 10            10 FALSE   
+## # … with 392 more rows</code></pre>
+<p>Finally, this sets the parameters for the plot and makes the network graph:</p>
+<pre class="r"><code>legend_title &lt;- str_c(&quot;Minimum: &quot;, minimum_commuters, &quot; commuters&quot;)
+
+ggraph(manual_layout) +
+  geom_sf(data = allegheny_tracts, color = &quot;dark grey&quot;, fill = NA) +
+  geom_sf(data = rivers, fill = &quot;white&quot;, color = NA, alpha = .5) +
+  geom_node_point(alpha = 0) +
+  geom_edge_fan(aes(edge_width = commuters, 
+                    edge_alpha = commuters),
+                arrow = arrow(length = unit(.5, &#39;lines&#39;)), 
+                start_cap = circle(.1, &#39;lines&#39;),
+                end_cap = circle(.2, &#39;lines&#39;),
+                color = &quot;white&quot;,
+                strength = .5) +
+  scale_edge_width_continuous(legend_title, range = c(.1, 1.5)) +
+  scale_edge_alpha_continuous(legend_title, range = c(.1, .8)) +
+  scale_fill_viridis_c() +
+  labs(x = NULL,
+       y = NULL,
+       title = &quot;Where do people commute from/to for work?&quot;,
+       subtitle = &quot;Excludes within-tract commuters&quot;,
+       caption = &quot;Based on 2015 US Census LODES dataset | @conor_tompkins&quot;) +
+  theme_graph() +
+  theme(legend.background = element_rect(fill = &quot;light grey&quot;),
+        legend.text = element_text(color = &quot;black&quot;),
+        legend.title = element_text(color = &quot;black&quot;),
+        panel.background = element_rect(fill = &quot;black&quot;))</code></pre>
+<p><img src="/post/analyzing-commuter-patterns-in-allegheny-county/index_files/figure-html/unnamed-chunk-24-1.png" width="1152" /></p>
+<p>Clearly downtown Pittsburgh attracts the most commuters. This is not surprising, but it obscures other job centers that attract employees.</p>
+</div>
+<div id="set-up-graph-without-downtown-tract" class="section level2">
+<h2>Set up graph without downtown tract</h2>
+<p>This code filters out commuters that work downtown. Again, set a threshhold and filter on it.</p>
+<pre class="r"><code>minimum_commuters &lt;- 100
+
+g_filtered &lt;- g %&gt;% 
+  activate(edges) %&gt;% 
+  filter(commuters &gt; minimum_commuters)
+
+g_filtered</code></pre>
+<pre><code>## # A tbl_graph: 402 nodes and 358 edges
+## #
+## # A directed simple graph with 138 components
+## #
+## # Edge Data: 358 x 3 (active)
+##    from    to commuters
+##   &lt;int&gt; &lt;int&gt;     &lt;dbl&gt;
+## 1     4     2       142
+## 2    10     2       103
+## 3    11     2       142
+## 4    15     2       178
+## 5    16     2       101
+## 6    17     2       115
+## # … with 352 more rows
+## #
+## # Node Data: 402 x 1
+##   name       
+##   &lt;chr&gt;      
+## 1 42003010300
+## 2 42003020100
+## 3 42003020300
+## # … with 399 more rows</code></pre>
+<p>This code goes into the network data and excludes edges that connect to the downtown tract.</p>
+<pre class="r"><code>filter_tract &lt;- &quot;42003020100&quot;
+
+selected_node &lt;- manual_layout %&gt;% 
+  filter(name != filter_tract) %&gt;% 
+  pull(.ggraph.orig_index)
+
+g_filtered &lt;- g_filtered %&gt;% 
+  activate(edges) %&gt;% 
+  filter(to %in% selected_node)
+
+g_filtered</code></pre>
+<pre><code>## # A tbl_graph: 402 nodes and 103 edges
+## #
+## # A directed simple graph with 334 components
+## #
+## # Edge Data: 103 x 3 (active)
+##    from    to commuters
+##   &lt;int&gt; &lt;int&gt;     &lt;dbl&gt;
+## 1    18   402       158
+## 2    19   402       117
+## 3    20   402       101
+## 4    21   402       287
+## 5    21     5       132
+## 6    24   402       107
+## # … with 97 more rows
+## #
+## # Node Data: 402 x 1
+##   name       
+##   &lt;chr&gt;      
+## 1 42003010300
+## 2 42003020100
+## 3 42003020300
+## # … with 399 more rows</code></pre>
+<p>This creates another layout for this plot:</p>
+<pre class="r"><code>manual_layout_filtered &lt;- create_layout(graph = g_filtered,
+                                        layout = node_pos)</code></pre>
+<pre class="r"><code>legend_title &lt;- str_c(&quot;Minimum: &quot;, minimum_commuters, &quot; commuters&quot;)
+
+ggraph(manual_layout_filtered) +
+  geom_sf(data = allegheny_tracts, size = .1, fill = NA, color = &quot;dark grey&quot;) +
+  geom_sf(data = rivers, fill = &quot;white&quot;, color = NA, alpha = .5) +
+  geom_edge_fan(aes(edge_width = commuters, edge_alpha = commuters
+            ),
+            arrow = arrow(length = unit(.5, &#39;lines&#39;)),
+            start_cap = circle(.1, &#39;lines&#39;),
+            end_cap = circle(.2, &#39;lines&#39;),
+            color = &quot;white&quot;,
+            strength = .5) +
+  scale_edge_width_continuous(legend_title, range = c(.1, 1.5)) +
+  scale_edge_alpha_continuous(legend_title, range = c(.1, .8)) +
+  scale_fill_viridis_c() +
+  labs(x = NULL,
+       y = NULL,
+       title = &quot;Where do people commute from/to for work?&quot;,
+       subtitle = &quot;Excludes within-tract commuters and commuters to downtown tract&quot;,
+       caption = &quot;Based on 2015 US Census LODES dataset | @conor_tompkins&quot;) +
+  theme_graph() +
+  theme(legend.background = element_rect(fill = &quot;light grey&quot;),
+        legend.text = element_text(color = &quot;black&quot;),
+        legend.title = element_text(color = &quot;black&quot;),
+        panel.background = element_rect(fill = &quot;black&quot;))</code></pre>
+<p><img src="/post/analyzing-commuter-patterns-in-allegheny-county/index_files/figure-html/unnamed-chunk-28-1.png" width="1152" /></p>
+</div>
+<div id="set-up-facted-graphs" class="section level2">
+<h2>Set up facted graphs</h2>
+<p>This code creates a faceted plot that focuses on the top 5 tracts in terms of commuter outflow:</p>
+<pre class="r"><code>minimum_commuters &lt;- 5
+
+top_work_tracts &lt;- df_home %&gt;% 
+  arrange(desc(commuters_out)) %&gt;% 
+  top_n(5, commuters_out) %&gt;% 
+  select(tract)
+
+g_facet &lt;- g %&gt;% 
+  activate(edges) %&gt;% 
+  left_join(manual_layout %&gt;% select(.ggraph.index, name), by = c(&quot;from&quot; = &quot;.ggraph.index&quot;)) %&gt;% 
+  semi_join(top_work_tracts, by = c(&quot;name&quot; = &quot;tract&quot;)) %&gt;% 
+  filter(commuters &gt; minimum_commuters)
+
+g_facet %&gt;% 
+  arrange(desc(commuters)) %&gt;% 
+  activate(edges)</code></pre>
+<pre><code>## # A tbl_graph: 402 nodes and 480 edges
+## #
+## # A directed simple graph with 231 components
+## #
+## # Edge Data: 480 x 4 (active)
+##    from    to commuters name       
+##   &lt;int&gt; &lt;int&gt;     &lt;dbl&gt; &lt;chr&gt;      
+## 1   122     2       551 42003409000
+## 2   125     2       440 42003412001
+## 3   192   202       312 42003453004
+## 4   150     2       300 42003426300
+## 5   192     2       294 42003453004
+## 6   190   188       278 42003452000
+## # … with 474 more rows
+## #
+## # Node Data: 402 x 1
+##   name       
+##   &lt;chr&gt;      
+## 1 42003010300
+## 2 42003020100
+## 3 42003020300
+## # … with 399 more rows</code></pre>
+<pre class="r"><code>manual_layout_faceted &lt;- create_layout(graph = g_facet,
+                                        layout = node_pos)
+manual_layout_faceted %&gt;% 
+  as_tibble()</code></pre>
+<pre><code>## # A tibble: 402 x 7
+##    GEOID           x     y name        .ggraph.orig_index .ggraph.index circular
+##    &lt;chr&gt;       &lt;dbl&gt; &lt;dbl&gt; &lt;chr&gt;                    &lt;int&gt;         &lt;int&gt; &lt;lgl&gt;   
+##  1 42003010300 -80.0  40.4 42003010300                  1             1 FALSE   
+##  2 42003020100 -80.0  40.4 42003020100                  2             2 FALSE   
+##  3 42003020300 -80.0  40.5 42003020300                  3             3 FALSE   
+##  4 42003030500 -80.0  40.4 42003030500                  4             4 FALSE   
+##  5 42003040200 -80.0  40.4 42003040200                  5             5 FALSE   
+##  6 42003040400 -79.9  40.4 42003040400                  6             6 FALSE   
+##  7 42003040500 -80.0  40.4 42003040500                  7             7 FALSE   
+##  8 42003040600 -80.0  40.4 42003040600                  8             8 FALSE   
+##  9 42003040900 -80.0  40.4 42003040900                  9             9 FALSE   
+## 10 42003050100 -80.0  40.4 42003050100                 10            10 FALSE   
+## # … with 392 more rows</code></pre>
+<pre class="r"><code>legend_title &lt;- str_c(&quot;Minimum: &quot;, minimum_commuters, &quot; commuters&quot;)
+
+ggraph(manual_layout_faceted) +
+  geom_sf(data = allegheny_tracts, size = .1, fill = NA, color = &quot;dark grey&quot;) +
+  geom_sf(data = rivers, fill = &quot;white&quot;, color = NA, alpha = .5) +
+  geom_edge_fan(aes(edge_width = commuters, edge_alpha = commuters),
+            arrow = arrow(length = unit(.5, &#39;lines&#39;)),
+            start_cap = circle(.1, &#39;lines&#39;),
+            end_cap = circle(.2, &#39;lines&#39;),
+            color = &quot;red&quot;,
+            strength = .5) +
+  facet_edges(~name) +
+  scale_edge_width_continuous(legend_title, range = c(.1, 1.5)) +
+  scale_edge_alpha_continuous(legend_title, range = c(.1, 1)) +
+  scale_fill_viridis_c() +
+  labs(x = NULL,
+       y = NULL,
+       title = &quot;Where do people commute from/to for work?&quot;,
+       subtitle = &quot;Not including within-tract commuters&quot;,
+       caption = &quot;Based on 2015 US Census LODES dataset | @conor_tompkins&quot;) +
+  theme_graph() +
+  theme(legend.background = element_rect(fill = &quot;light grey&quot;),
+        legend.text = element_text(color = &quot;black&quot;),
+        legend.title = element_text(color = &quot;black&quot;),
+        panel.background = element_rect(fill = &quot;black&quot;))</code></pre>
+<p><img src="/post/analyzing-commuter-patterns-in-allegheny-county/index_files/figure-html/unnamed-chunk-31-1.png" width="1152" /></p>
+</div>
+<div id="zoom-in-on-one-tract" class="section level2">
+<h2>Zoom in on one tract</h2>
+<p>There also may be tracts of interest outside of the main commuter inflow/outflow tracts. This code creates a framework for filtering on commuters from a selected tract and zooming in on that tract.</p>
+<p>Set the threshhold and filter:</p>
+<pre class="r"><code>minimum_commuters &lt;- 15
+
+g_filtered &lt;- g %&gt;% 
+  activate(edges) %&gt;% 
+  filter(commuters &gt; minimum_commuters)
+
+g_filtered</code></pre>
+<pre><code>## # A tbl_graph: 402 nodes and 5804 edges
+## #
+## # A directed simple graph with 11 components
+## #
+## # Edge Data: 5,804 x 3 (active)
+##    from    to commuters
+##   &lt;int&gt; &lt;int&gt;     &lt;dbl&gt;
+## 1     1     2        73
+## 2     1     5        22
+## 3     2     5        87
+## 4     2   402        75
+## 5     2     1        37
+## 6     2   202        36
+## # … with 5,798 more rows
+## #
+## # Node Data: 402 x 1
+##   name       
+##   &lt;chr&gt;      
+## 1 42003010300
+## 2 42003020100
+## 3 42003020300
+## # … with 399 more rows</code></pre>
+<p>This code gets the commuter outflow data for one tract and creates <code>allegheny_tracts_highlight</code>, which will be used to highlight the tract of interest.</p>
+<pre class="r"><code>filter_tract &lt;- &quot;42003473500&quot;
+
+allegheny_tracts_highlight &lt;- allegheny_tracts %&gt;% 
+  semi_join(df_tracts_summarized %&gt;% 
+              filter(h_tract == filter_tract), by = c(&quot;GEOID&quot; = &quot;w_tract&quot;)) %&gt;% 
+  filter(commuters_in &gt; minimum_commuters)
+
+allegheny_tracts_highlight</code></pre>
+<pre><code>## Simple feature collection with 208 features and 5 fields
+## geometry type:  MULTIPOLYGON
+## dimension:      XY
+## bbox:           xmin: -80.36087 ymin: 40.20845 xmax: -79.70383 ymax: 40.67494
+## geographic CRS: NAD83
+## # A tibble: 208 x 6
+##    GEOID  NAME   total_pop                   geometry commuters_out commuters_in
+##  * &lt;chr&gt;  &lt;chr&gt;      &lt;dbl&gt;         &lt;MULTIPOLYGON [°]&gt;         &lt;dbl&gt;        &lt;dbl&gt;
+##  1 42003… Censu…      6600 (((-79.98077 40.43836, -7…           390         5470
+##  2 42003… Censu…      3629 (((-79.9908 40.44442, -79…          1030        58306
+##  3 42003… Censu…       616 (((-79.98062 40.45904, -7…           411         7291
+##  4 42003… Censu…      2604 (((-79.96802 40.4429, -79…           428        12340
+##  5 42003… Censu…      2488 (((-79.94652 40.44508, -7…           357          955
+##  6 42003… Censu…      3694 (((-79.95497 40.4371, -79…           290         1817
+##  7 42003… Censu…      2969 (((-79.94986 40.43443, -7…           805         7822
+##  8 42003… Censu…      2057 (((-79.96206 40.44863, -7…           800          235
+##  9 42003… Censu…      2197 (((-79.93137 40.45274, -7…           769         1343
+## 10 42003… Censu…      2997 (((-79.92533 40.45499, -7…          1367         1277
+## # … with 198 more rows</code></pre>
+<pre class="r"><code>selected_node &lt;- manual_layout %&gt;% 
+  filter(name == filter_tract) %&gt;% 
+  pull(.ggraph.orig_index)
+
+g_filtered &lt;- g_filtered %&gt;% 
+  activate(edges) %&gt;% 
+  filter(from == selected_node)
+
+g_filtered</code></pre>
+<pre><code>## # A tbl_graph: 402 nodes and 17 edges
+## #
+## # A rooted forest with 385 trees
+## #
+## # Edge Data: 17 x 3 (active)
+##    from    to commuters
+##   &lt;int&gt; &lt;int&gt;     &lt;dbl&gt;
+## 1   233     2       286
+## 2   233   402        67
+## 3   233     5        46
+## 4   233   202        42
+## 5   233   229        40
+## 6   233   217        33
+## # … with 11 more rows
+## #
+## # Node Data: 402 x 1
+##   name       
+##   &lt;chr&gt;      
+## 1 42003010300
+## 2 42003020100
+## 3 42003020300
+## # … with 399 more rows</code></pre>
+<p>Set the layout for the graph:</p>
+<pre class="r"><code>manual_layout_filtered &lt;- create_layout(graph = g_filtered,
+                                        layout = node_pos)</code></pre>
+<pre><code>## # A tibble: 402 x 7
+##    GEOID           x     y name        .ggraph.orig_index .ggraph.index circular
+##    &lt;chr&gt;       &lt;dbl&gt; &lt;dbl&gt; &lt;chr&gt;                    &lt;int&gt;         &lt;int&gt; &lt;lgl&gt;   
+##  1 42003010300 -80.0  40.4 42003010300                  1             1 FALSE   
+##  2 42003020100 -80.0  40.4 42003020100                  2             2 FALSE   
+##  3 42003020300 -80.0  40.5 42003020300                  3             3 FALSE   
+##  4 42003030500 -80.0  40.4 42003030500                  4             4 FALSE   
+##  5 42003040200 -80.0  40.4 42003040200                  5             5 FALSE   
+##  6 42003040400 -79.9  40.4 42003040400                  6             6 FALSE   
+##  7 42003040500 -80.0  40.4 42003040500                  7             7 FALSE   
+##  8 42003040600 -80.0  40.4 42003040600                  8             8 FALSE   
+##  9 42003040900 -80.0  40.4 42003040900                  9             9 FALSE   
+## 10 42003050100 -80.0  40.4 42003050100                 10            10 FALSE   
+## # … with 392 more rows</code></pre>
+<p>This will be used to zoom in on the selected tract:</p>
+<pre class="r"><code>zoom_x &lt;- manual_layout_filtered %&gt;% 
+  filter(.ggraph.orig_index == selected_node) %&gt;% 
+  pull(x)
+
+zoom_y &lt;- manual_layout_filtered %&gt;% 
+  filter(.ggraph.orig_index == selected_node) %&gt;% 
+  pull(y)
+
+zoom_magnitude &lt;- .25</code></pre>
+<pre class="r"><code>legend_title &lt;- str_c(&quot;Minimum: &quot;, minimum_commuters, &quot; commuters&quot;)
+
+ggraph(manual_layout_filtered) +
+  geom_sf(data = allegheny_tracts, size = .1, fill = NA) +
+  geom_sf(data = rivers, fill = &quot;white&quot;, color = NA, alpha = .5) +
+  geom_sf(data = allegheny_tracts %&gt;%  filter(GEOID == filter_tract), 
+          fill = &quot;grey&quot;) +
+  geom_edge_fan(aes(edge_width = commuters),
+                arrow = arrow(length = unit(.5, &#39;lines&#39;)),
+                start_cap = circle(.1, &#39;lines&#39;),
+                end_cap = circle(.2, &#39;lines&#39;),
+                color = &quot;red&quot;,
+                strength = .5) +
+  coord_sf(xlim = c(zoom_x - zoom_magnitude, zoom_x + zoom_magnitude), 
+           ylim = c(zoom_y - zoom_magnitude, zoom_y + zoom_magnitude)) +
+  scale_edge_width_continuous(legend_title, range = c(.1, 1.5)) +
+  scale_edge_alpha_continuous(legend_title, range = c(.1, .8)) +
+  scale_fill_viridis_c() +
+  labs(x = NULL,
+       y = NULL,
+       title = &quot;Where do people commute from/to for work?&quot;,
+       subtitle = str_c(&quot;From tract&quot;, filter_tract, sep = &quot; &quot;),
+       caption = &quot;Based on 2015 US Census LODES dataset | @conor_tompkins&quot;) +
+  theme_graph() +
+  theme(legend.background = element_rect(fill = &quot;light grey&quot;),
+        legend.text = element_text(color = &quot;black&quot;),
+        legend.title = element_text(color = &quot;black&quot;),
+        panel.background = element_rect(fill = &quot;black&quot;))</code></pre>
+<p><img src="/post/analyzing-commuter-patterns-in-allegheny-county/index_files/figure-html/unnamed-chunk-37-1.png" width="1152" /></p>
+</div>
+<div id="references" class="section level1">
+<h1>References</h1>
+<ul>
+<li><a href="http://www.robertmanduca.com/projects/jobs.html" class="uri">http://www.robertmanduca.com/projects/jobs.html</a></li>
+<li><a href="https://lehd.ces.census.gov/data/" class="uri">https://lehd.ces.census.gov/data/</a></li>
+<li><a href="https://lehd.ces.census.gov/data/lodes/LODES7/LODESTechDoc7.3.pdf" class="uri">https://lehd.ces.census.gov/data/lodes/LODES7/LODESTechDoc7.3.pdf</a></li>
+<li><a href="https://walkerke.github.io/tidycensus/articles/basic-usage.html" class="uri">https://walkerke.github.io/tidycensus/articles/basic-usage.html</a></li>
+</ul>
+</div>
