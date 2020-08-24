@@ -133,6 +133,8 @@ After reviewing this graph and considering things like covariance and zero-varia
   * Number of workers that live in the tract
   * Number of jobs in the tract
 
+Note that I am intentionally excluding any geographic data about the tracts. I am more interested in how "city-like" a given tract is than how close it is to the geographic center of the city.
+
 This finalizes the data I will use to build the model.
 ```{r}
 census_combined <- all_data %>% 

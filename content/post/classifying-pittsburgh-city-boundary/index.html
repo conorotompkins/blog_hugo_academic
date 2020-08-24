@@ -147,6 +147,7 @@ After reviewing this graph and considering things like covariance and zero-varia
 <li>Number of jobs in the tract</li>
 </ul></li>
 </ul>
+<p>Note that I am intentionally excluding any geographic data about the tracts. I am more interested in how “city-like” a given tract is than how close it is to the geographic center of the city.</p>
 <p>This finalizes the data I will use to build the model.</p>
 <pre class="r"><code>census_combined &lt;- all_data %&gt;% 
   select(GEOID, type, 
