@@ -92,7 +92,7 @@ glimpse(city_tracts)</code></pre>
   geom_sf(data = pgh_official_boundary, color = &quot;white&quot;, linetype = 2, alpha = 0) +
   theme_void()</code></pre>
 <p><img src="/post/classifying-pittsburgh-city-boundary/index_files/figure-html/unnamed-chunk-3-1.png" width="672" />
-This reads in the data I will consider for the model.</p>
+This reads in the data I will consider for the model. All the data is from the 2010 Census.</p>
 <pre class="r"><code>all_data &lt;- read_csv(&quot;data/combined_census_data_tract.csv&quot;, col_types = cols(.default = &quot;c&quot;)) %&gt;%
   left_join(city_tracts) %&gt;% 
   mutate(type = case_when(selected == TRUE ~ &quot;city&quot;,
