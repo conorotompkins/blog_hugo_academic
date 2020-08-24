@@ -95,7 +95,7 @@ tracts %>%
   geom_sf(data = pgh_official_boundary, color = "white", linetype = 2, alpha = 0) +
   theme_void()
 ```
-This reads in the data I will consider for the model.
+This reads in the data I will consider for the model. All the data is from the 2010 Census.
 ```{r}
 all_data <- read_csv("data/combined_census_data_tract.csv", col_types = cols(.default = "c")) %>%
   left_join(city_tracts) %>% 
