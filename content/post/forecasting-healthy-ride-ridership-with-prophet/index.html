@@ -1,0 +1,212 @@
+---
+# Documentation: https://sourcethemes.com/academic/docs/managing-content/
+
+title: "Forecasting Healthy Ride Ridership With Prophet"
+subtitle: ""
+summary: ""
+authors: [Conor Tompkins]
+tags: [R, Pittsburgh, Healthy Ride]
+categories: [R, Pittsburgh, Healthy Ride]
+date: 2019-08-03
+lastmod: 2020-08-24T13:20:16-04:00
+featured: false
+draft: true
+
+# Featured image
+# To use, add an image named `featured.jpg/png` to your page's folder.
+# Focal points: Smart, Center, TopLeft, Top, TopRight, Left, Right, BottomLeft, Bottom, BottomRight.
+image:
+  caption: ""
+  focal_point: ""
+  preview_only: false
+
+# Projects (optional).
+#   Associate this post with one or more of your projects.
+#   Simply enter your project's folder or file name without extension.
+#   E.g. `projects = ["internal-project"]` references `content/project/deep-learning/index.md`.
+#   Otherwise, set `projects = []`.
+projects: []
+---
+
+
+
+<p>This post is about predicting demand for the Healthy Ride bike system in Pittsburgh. I wanted to try out Facebook’s <code>prophet</code> package and try to do some time series forecasting.</p>
+<p>As usual, load the required packages and set up the environment:</p>
+<pre class="r"><code>library(tidyverse)
+library(lubridate)
+library(prophet)
+library(janitor)
+library(hrbrthemes)
+
+options(scipen = 999)
+
+theme_set(theme_bw())</code></pre>
+<p>This code loads the data and formats the date column so the <code>prophet</code> package can interface with it. I use <code>dir()</code> to find all the CSV files in the folder and then <code>set_names()</code> and <code>map_df(read_csv())</code> to read each of the CSV files into memory.</p>
+<pre class="r"><code>files &lt;- dir(&quot;data&quot;, &quot;.csv&quot;)
+
+data &lt;- str_c(&quot;data/&quot;, files) %&gt;% 
+  set_names() %&gt;% 
+  map_df(read_csv) %&gt;% 
+  clean_names()
+
+df &lt;- data %&gt;% 
+  filter(date &lt; &quot;2019-08-01&quot;) %&gt;% 
+  count(date)
+
+# df %&gt;% 
+#   ggplot(aes(date, n)) +
+#   geom_point()
+# 
+# last(df$date)</code></pre>
+<p>The data I will use contains the number of rides per day and also includes the month and year. <code>prophet</code> will identify the time series patterns (“seasonality”) in the data and identify the “true” pattern</p>
+<p><code>prophet</code> has a plug-and-play workflow that is easy to use, but it has more stringent requirements for how the data has to be shaped. The date data has to be named <code>ds</code> and the target variable has to be named <code>y</code>. I set the floor to zero because there cannot be fewer than 0 rides in a day. <code>prophet</code> requires a cap</p>
+<pre class="r"><code>max_rides &lt;- df %&gt;% 
+  summarize(max_rides = max(n) * 3) %&gt;% 
+  pull()
+
+df &lt;- df %&gt;% 
+  mutate(n = log(n),
+         cap = log(max_rides)) %&gt;% 
+  filter(!is.na(date)) %&gt;% 
+  rename(ds = date,
+         y = n) %&gt;% 
+  mutate(floor = 0)
+
+
+
+df %&gt;% 
+  filter(is.na(ds))</code></pre>
+<pre><code>## # A tibble: 0 x 4
+## # … with 4 variables: ds &lt;date&gt;, y &lt;dbl&gt;, cap &lt;dbl&gt;, floor &lt;dbl&gt;</code></pre>
+<pre class="r"><code>glimpse(df)</code></pre>
+<pre><code>## Rows: 1,518
+## Columns: 4
+## $ ds    &lt;date&gt; 2015-05-31, 2015-06-01, 2015-06-02, 2015-06-03, 2015-06-04, 20…
+## $ y     &lt;dbl&gt; 6.173786, 4.844187, 4.934474, 4.875197, 5.361292, 5.609472, 5.9…
+## $ cap   &lt;dbl&gt; 8.013343, 8.013343, 8.013343, 8.013343, 8.013343, 8.013343, 8.0…
+## $ floor &lt;dbl&gt; 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, …</code></pre>
+<p>This creates the set of holidays I use in the model.</p>
+<pre class="r"><code>us_holidays &lt;- prophet::generated_holidays %&gt;% 
+  as_tibble() %&gt;% 
+  filter(country == &quot;US&quot;) %&gt;% 
+  mutate(ds = as.Date(ds))</code></pre>
+<p>This code fits a model to the dataset.</p>
+<pre class="r"><code>m &lt;- prophet(df, growth = &#39;logistic&#39;, holidays = us_holidays)</code></pre>
+<p><code>make_future_dataframe()</code> creates the dataframe that <code>prophet</code> uses to make its forecast. In this case, I have it create a dataframe with 365 days of additional rows to predict onto.</p>
+<pre class="r"><code>future &lt;- make_future_dataframe(m, periods = 365, freq = &quot;day&quot;) %&gt;% 
+  mutate(floor = 0,
+         cap = unique(df$cap))</code></pre>
+<p>This code performs the forecast on the future dataset.</p>
+<pre class="r"><code>forecast &lt;- predict(m, future) %&gt;% 
+  as_tibble()</code></pre>
+<p>The output is a dataframe with the date, the predicted ridership, and the upper and lower bounds of the prediction.</p>
+<pre class="r"><code>forecast</code></pre>
+<pre><code>## # A tibble: 1,883 x 66
+##    ds                  trend   cap floor additive_terms additive_terms_…
+##    &lt;dttm&gt;              &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;          &lt;dbl&gt;            &lt;dbl&gt;
+##  1 2015-05-31 00:00:00  5.14  8.01     0          0.720            0.720
+##  2 2015-06-01 00:00:00  5.14  8.01     0          0.657            0.657
+##  3 2015-06-02 00:00:00  5.14  8.01     0          0.724            0.724
+##  4 2015-06-03 00:00:00  5.14  8.01     0          0.765            0.765
+##  5 2015-06-04 00:00:00  5.14  8.01     0          0.733            0.733
+##  6 2015-06-05 00:00:00  5.14  8.01     0          0.784            0.784
+##  7 2015-06-06 00:00:00  5.14  8.01     0          0.844            0.844
+##  8 2015-06-07 00:00:00  5.14  8.01     0          0.754            0.754
+##  9 2015-06-08 00:00:00  5.14  8.01     0          0.690            0.690
+## 10 2015-06-09 00:00:00  5.14  8.01     0          0.755            0.755
+## # … with 1,873 more rows, and 60 more variables: additive_terms_upper &lt;dbl&gt;,
+## #   `Christmas Day` &lt;dbl&gt;, `Christmas Day_lower` &lt;dbl&gt;, `Christmas
+## #   Day_upper` &lt;dbl&gt;, `Christmas Day (Observed)` &lt;dbl&gt;, `Christmas Day
+## #   (Observed)_lower` &lt;dbl&gt;, `Christmas Day (Observed)_upper` &lt;dbl&gt;, `Columbus
+## #   Day` &lt;dbl&gt;, `Columbus Day_lower` &lt;dbl&gt;, `Columbus Day_upper` &lt;dbl&gt;,
+## #   holidays &lt;dbl&gt;, holidays_lower &lt;dbl&gt;, holidays_upper &lt;dbl&gt;, `Independence
+## #   Day` &lt;dbl&gt;, `Independence Day_lower` &lt;dbl&gt;, `Independence Day_upper` &lt;dbl&gt;,
+## #   `Independence Day (Observed)` &lt;dbl&gt;, `Independence Day
+## #   (Observed)_lower` &lt;dbl&gt;, `Independence Day (Observed)_upper` &lt;dbl&gt;, `Labor
+## #   Day` &lt;dbl&gt;, `Labor Day_lower` &lt;dbl&gt;, `Labor Day_upper` &lt;dbl&gt;, `Martin
+## #   Luther King, Jr. Day` &lt;dbl&gt;, `Martin Luther King, Jr. Day_lower` &lt;dbl&gt;,
+## #   `Martin Luther King, Jr. Day_upper` &lt;dbl&gt;, `Memorial Day` &lt;dbl&gt;, `Memorial
+## #   Day_lower` &lt;dbl&gt;, `Memorial Day_upper` &lt;dbl&gt;, `New Year&#39;s Day` &lt;dbl&gt;, `New
+## #   Year&#39;s Day_lower` &lt;dbl&gt;, `New Year&#39;s Day_upper` &lt;dbl&gt;, `New Year&#39;s Day
+## #   (Observed)` &lt;dbl&gt;, `New Year&#39;s Day (Observed)_lower` &lt;dbl&gt;, `New Year&#39;s Day
+## #   (Observed)_upper` &lt;dbl&gt;, Thanksgiving &lt;dbl&gt;, Thanksgiving_lower &lt;dbl&gt;,
+## #   Thanksgiving_upper &lt;dbl&gt;, `Veterans Day` &lt;dbl&gt;, `Veterans Day_lower` &lt;dbl&gt;,
+## #   `Veterans Day_upper` &lt;dbl&gt;, `Veterans Day (Observed)` &lt;dbl&gt;, `Veterans Day
+## #   (Observed)_lower` &lt;dbl&gt;, `Veterans Day (Observed)_upper` &lt;dbl&gt;,
+## #   `Washington&#39;s Birthday` &lt;dbl&gt;, `Washington&#39;s Birthday_lower` &lt;dbl&gt;,
+## #   `Washington&#39;s Birthday_upper` &lt;dbl&gt;, weekly &lt;dbl&gt;, weekly_lower &lt;dbl&gt;,
+## #   weekly_upper &lt;dbl&gt;, yearly &lt;dbl&gt;, yearly_lower &lt;dbl&gt;, yearly_upper &lt;dbl&gt;,
+## #   multiplicative_terms &lt;dbl&gt;, multiplicative_terms_lower &lt;dbl&gt;,
+## #   multiplicative_terms_upper &lt;dbl&gt;, yhat_lower &lt;dbl&gt;, yhat_upper &lt;dbl&gt;,
+## #   trend_lower &lt;dbl&gt;, trend_upper &lt;dbl&gt;, yhat &lt;dbl&gt;</code></pre>
+<p><code>plot</code> automatically plots the <code>forecast</code> data:</p>
+<pre class="r"><code>plot(m, forecast)</code></pre>
+<p><img src="/post/forecasting-healthy-ride-ridership-with-prophet/index_files/figure-html/unnamed-chunk-10-1.png" width="672" /></p>
+<p><code>prophet</code> also decomposes the various seasonal effects.</p>
+<pre class="r"><code>prophet_plot_components(m, forecast)</code></pre>
+<p><img src="/post/forecasting-healthy-ride-ridership-with-prophet/index_files/figure-html/unnamed-chunk-11-1.png" width="672" /></p>
+<p>We can of course use <code>ggplot</code> to manually plot the data.</p>
+<pre class="r"><code>df_aug &lt;- forecast %&gt;% 
+  mutate(ds = ymd(ds)) %&gt;% 
+  left_join(df) %&gt;% 
+  mutate(yhat = exp(yhat),
+         yhat_lower = exp(yhat_lower),
+         yhat_upper = exp(yhat_upper),
+         y = exp(y))
+
+df_aug %&gt;% 
+  ggplot(aes(x = ds)) +
+    geom_ribbon(data = df_aug %&gt;% filter(ds &gt; last(df$ds)), 
+                aes(ymin = yhat_lower, ymax = yhat_upper), alpha = .2, fill = &quot;blue&quot;) +
+    geom_line(data = df_aug %&gt;% filter(ds &gt; last(df$ds)), 
+              aes(y = yhat), color = &quot;blue&quot;) +
+    geom_point(aes(y = y), alpha = .5) +
+    geom_hline(aes(yintercept = unique(floor)), linetype = 2) +
+    labs(x = NULL,
+         y = &quot;Number of rides&quot;) +
+    scale_y_comma() +
+  theme_bw(base_size = 20)</code></pre>
+<p><img src="/post/forecasting-healthy-ride-ridership-with-prophet/index_files/figure-html/unnamed-chunk-12-1.png" width="1152" /></p>
+<p><code>prophet</code> also provides functions for cross-validation.</p>
+<pre class="r"><code>df_cv &lt;- cross_validation(m, horizon = 30, units = &#39;days&#39;)
+
+performance_metrics(df_cv) %&gt;% 
+  as_tibble() %&gt;% 
+  gather(metric, measure, -horizon) %&gt;% 
+  ggplot(aes(horizon, measure)) +
+  geom_line() +
+  facet_wrap(~metric, scales = &quot;free_y&quot;,
+             ncol = 1) +
+  labs(x = &quot;Horizon&quot;,
+       y = &quot;Measure&quot;) +
+  theme_bw()</code></pre>
+<p><img src="/post/forecasting-healthy-ride-ridership-with-prophet/index_files/figure-html/unnamed-chunk-13-1.png" width="672" /></p>
+<p>We can also inspect the impact of holidays on the prediction.</p>
+<pre class="r"><code>df_holiday_impact &lt;- forecast %&gt;% 
+  clean_names() %&gt;% 
+  select(ds, christmas_day:washingtons_birthday) %&gt;% 
+  select(-contains(&quot;upper&quot;), -contains(&quot;lower&quot;)) %&gt;% 
+  pivot_longer(-ds, names_to = &quot;holiday&quot;, values_to = &quot;value&quot;) %&gt;% 
+  mutate(year = as.factor(year(ds))) %&gt;% 
+  filter(holiday != &quot;holidays&quot;,
+         value != 0)
+
+df_holiday_impact %&gt;% 
+  arrange(ds) %&gt;% 
+  mutate(holiday = as.factor(holiday)) %&gt;% 
+  ggplot(aes(holiday, value, color = year)) +
+  geom_hline(yintercept = 0, linetype = 2) +
+  geom_jitter() +
+  coord_flip() +
+  labs(x = &quot;Holiday&quot;,
+       y = &quot;Impact&quot;) +
+  scale_color_discrete(&quot;Year&quot;) +
+  theme_ipsum()</code></pre>
+<p><img src="/post/forecasting-healthy-ride-ridership-with-prophet/index_files/figure-html/unnamed-chunk-14-1.png" width="672" /></p>
+<div id="documentation-and-references" class="section level2">
+<h2>Documentation and references</h2>
+<ul>
+<li><a href="https://facebook.github.io/prophet/" class="uri">https://facebook.github.io/prophet/</a></li>
+<li><a href="https://data.wprdc.org/dataset/healthyride-trip-data" class="uri">https://data.wprdc.org/dataset/healthyride-trip-data</a></li>
+</ul>
+</div>
