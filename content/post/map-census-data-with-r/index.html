@@ -1,0 +1,795 @@
+---
+# Documentation: https://sourcethemes.com/academic/docs/managing-content/
+
+title: "Map Census Data With R"
+subtitle: ""
+summary: ""
+authors: [Conor Tompkins]
+tags: [R, Potholes, Census]
+categories: [R, Potholes, Census]
+date: 2019-05-28
+lastmod: 2020-08-28T17:22:20-04:00
+featured: false
+draft: false
+
+# Featured image
+# To use, add an image named `featured.jpg/png` to your page's folder.
+# Focal points: Smart, Center, TopLeft, Top, TopRight, Left, Right, BottomLeft, Bottom, BottomRight.
+image:
+  caption: ""
+  focal_point: ""
+  preview_only: false
+
+# Projects (optional).
+#   Associate this post with one or more of your projects.
+#   Simply enter your project's folder or file name without extension.
+#   E.g. `projects = ["internal-project"]` references `content/project/deep-learning/index.md`.
+#   Otherwise, set `projects = []`.
+projects: []
+---
+
+<script src="/rmarkdown-libs/kePrint/kePrint.js"></script>
+<link href="/rmarkdown-libs/lightable/lightable.css" rel="stylesheet" />
+
+
+<p>This talk was presented on May 30th, 2019 at <a href="https://www.meetup.com/codeforpgh/">Code For Pittsburgh</a>.</p>
+<p>Before we dive in, this presentation assumes that the user has basic familiarity with <code>tidyverse</code>, mainly <code>dplyr</code>. Knowing how to use <code>%&gt;%</code> will be very helpful.</p>
+<p>How to install packages:</p>
+<pre class="r"><code>install.packages(&quot;package_name&quot;)</code></pre>
+<p>Get your census API key: <a href="https://api.census.gov/data/key_signup.html" class="uri">https://api.census.gov/data/key_signup.html</a></p>
+<p>Configure environment:</p>
+<pre class="r"><code>library(tidycensus)
+library(tidyverse)
+library(sf)
+library(tigris)
+library(ggmap)
+library(janitor)
+
+theme_set(theme_bw())
+
+options(tigris_use_cache = TRUE,
+        scipen = 4,
+        digits = 3)</code></pre>
+<div id="packages" class="section level2">
+<h2>Packages</h2>
+<div id="tidycensus" class="section level3">
+<h3>{tidycensus}</h3>
+<p><a href="https://walkerke.github.io/tidycensus/"><code>tidycensus</code></a> gives access to the Census API and makes it easy to plot data on a map.</p>
+<p>Data</p>
+<ul>
+<li>Demographics
+<ul>
+<li>Decennial Census</li>
+<li>American Community Survey (ACS)</li>
+<li>error estimates</li>
+</ul></li>
+<li>Geometries
+<ul>
+<li>country</li>
+<li>county</li>
+<li>zip code</li>
+<li>blocks</li>
+<li>tracts</li>
+<li>and more</li>
+</ul></li>
+</ul>
+</div>
+<div id="sf" class="section level3">
+<h3>{sf}</h3>
+<p><a href="https://r-spatial.github.io/sf/articles/sf1.html">simple features</a> makes it easy to work with polygon data in R. It uses the familiar <code>tidyverse</code> framework: everything is a tibble, and it uses <code>%&gt;%</code>.</p>
+<p><code>ggplot2::geom_sf()</code> makes it easy to plot <code>sf</code> polygons.</p>
+<p><code>sf</code> can also do spatial calculations such as <code>st_contains</code>, <code>st_intersects</code>, and <code>st_boundary</code>.</p>
+</div>
+<div id="ggmap" class="section level3">
+<h3>{ggmap}</h3>
+<p>Uses <a href="https://cloud.google.com/maps-platform/">Google Maps API</a> to get basemaps.
+The API now requires a credit card, but it has a fairly generous “free” tier.</p>
+</div>
+</div>
+<div id="using-tidycensus" class="section level2">
+<h2>Using {tidycensus}</h2>
+<pre class="r"><code>census_api_key(&quot;your_key_here&quot;)</code></pre>
+<p>This loads the variables from the Decennial Census in 2010:</p>
+<pre class="r"><code>variables_dec &lt;- load_variables(year = 2010, dataset = &quot;sf1&quot;, cache = TRUE)</code></pre>
+<pre><code>## # A tibble: 3,346 x 3
+##    name    label                                concept         
+##    &lt;chr&gt;   &lt;chr&gt;                                &lt;chr&gt;           
+##  1 H001001 Total                                HOUSING UNITS   
+##  2 H002001 Total                                URBAN AND RURAL 
+##  3 H002002 Total!!Urban                         URBAN AND RURAL 
+##  4 H002003 Total!!Urban!!Inside urbanized areas URBAN AND RURAL 
+##  5 H002004 Total!!Urban!!Inside urban clusters  URBAN AND RURAL 
+##  6 H002005 Total!!Rural                         URBAN AND RURAL 
+##  7 H002006 Total!!Not defined for this file     URBAN AND RURAL 
+##  8 H003001 Total                                OCCUPANCY STATUS
+##  9 H003002 Total!!Occupied                      OCCUPANCY STATUS
+## 10 H003003 Total!!Vacant                        OCCUPANCY STATUS
+## # … with 3,336 more rows</code></pre>
+<p>This loads the ACS variables for 2017:</p>
+<pre class="r"><code>variables_acs &lt;- load_variables(year = 2017, dataset = &quot;acs5&quot;, cache = TRUE)</code></pre>
+<pre><code>## # A tibble: 25,070 x 3
+##    name       label                           concept                           
+##    &lt;chr&gt;      &lt;chr&gt;                           &lt;chr&gt;                             
+##  1 B00001_001 Estimate!!Total                 UNWEIGHTED SAMPLE COUNT OF THE PO…
+##  2 B00002_001 Estimate!!Total                 UNWEIGHTED SAMPLE HOUSING UNITS   
+##  3 B01001_001 Estimate!!Total                 SEX BY AGE                        
+##  4 B01001_002 Estimate!!Total!!Male           SEX BY AGE                        
+##  5 B01001_003 Estimate!!Total!!Male!!Under 5… SEX BY AGE                        
+##  6 B01001_004 Estimate!!Total!!Male!!5 to 9 … SEX BY AGE                        
+##  7 B01001_005 Estimate!!Total!!Male!!10 to 1… SEX BY AGE                        
+##  8 B01001_006 Estimate!!Total!!Male!!15 to 1… SEX BY AGE                        
+##  9 B01001_007 Estimate!!Total!!Male!!18 and … SEX BY AGE                        
+## 10 B01001_008 Estimate!!Total!!Male!!20 years SEX BY AGE                        
+## # … with 25,060 more rows</code></pre>
+<div id="map-total-population-in-the-u.s." class="section level3">
+<h3>Map total population in the U.S.</h3>
+<p>Use <code>View()</code> to browse the variables</p>
+<pre class="r"><code>variables_dec %&gt;% 
+  filter(str_detect(concept, &quot;POPULATION&quot;)) %&gt;% 
+  View()</code></pre>
+<p><code>P001001</code> has the data we are looking for.</p>
+<p>Query the total population of the continental U.S. states:</p>
+<pre class="r"><code>states &lt;- get_decennial(geography = &quot;state&quot;,
+                        variables = c(total_pop = &quot;P001001&quot;),
+                        geometry = TRUE,
+                        output = &quot;wide&quot;)</code></pre>
+<p>The <code>states</code> tibble contains the census data and the polygons for the geometries.</p>
+<pre><code>## Simple feature collection with 52 features and 3 fields
+## geometry type:  MULTIPOLYGON
+## dimension:      XY
+## bbox:           xmin: -179 ymin: 17.9 xmax: 180 ymax: 71.4
+## geographic CRS: NAD83
+## # A tibble: 52 x 4
+##    GEOID NAME       total_pop                                           geometry
+##    &lt;chr&gt; &lt;chr&gt;          &lt;dbl&gt;                                 &lt;MULTIPOLYGON [°]&gt;
+##  1 23    Maine        1328361 (((-67.6 44.5, -67.6 44.5, -67.6 44.5, -67.6 44.5…
+##  2 25    Massachus…   6547629 (((-70.8 41.6, -70.8 41.6, -70.8 41.6, -70.8 41.6…
+##  3 26    Michigan     9883640 (((-88.7 48.1, -88.7 48.1, -88.7 48.1, -88.7 48.1…
+##  4 30    Montana       989415 (((-104 45, -104 45, -104 45, -104 45, -105 45, -…
+##  5 32    Nevada       2700551 (((-114 37, -114 37, -114 36.8, -114 36.7, -114 3…
+##  6 34    New Jersey   8791894 (((-75.5 39.7, -75.5 39.7, -75.5 39.7, -75.5 39.7…
+##  7 36    New York    19378102 (((-71.9 41.3, -71.9 41.3, -71.9 41.3, -71.9 41.3…
+##  8 37    North Car…   9535483 (((-82.6 36, -82.6 36, -82.6 36, -82.6 36, -82.6 …
+##  9 39    Ohio        11536504 (((-82.8 41.7, -82.8 41.7, -82.8 41.7, -82.8 41.7…
+## 10 42    Pennsylva…  12702379 (((-75.4 39.8, -75.4 39.8, -75.5 39.8, -75.5 39.8…
+## # … with 42 more rows</code></pre>
+<p>Make a bar graph with the data:</p>
+<pre class="r"><code>states %&gt;% 
+  mutate(NAME = fct_reorder(NAME, total_pop)) %&gt;% 
+  ggplot(aes(NAME, total_pop)) +
+    geom_col() +
+    coord_flip()</code></pre>
+<p><img src="/post/map-census-data-with-r/index_files/figure-html/unnamed-chunk-12-1.png" width="672" /></p>
+<p>Plot the same data on a map:</p>
+<pre class="r"><code>states %&gt;% 
+  filter(NAME != &quot;Alaska&quot;,
+         NAME != &quot;Hawaii&quot;,
+         !str_detect(NAME, &quot;Puerto&quot;)) %&gt;% 
+  ggplot(aes(fill = total_pop)) +
+    geom_sf() +
+    scale_fill_viridis_c(&quot;Total Population&quot;)</code></pre>
+<p><img src="/post/map-census-data-with-r/index_files/figure-html/unnamed-chunk-13-1.png" width="672" /></p>
+<p>Pull the total population of each county in PA and plot it:</p>
+<pre class="r"><code>pennsylvania &lt;- get_decennial(geography = &quot;county&quot;,
+                           variables = c(total_pop = &quot;P001001&quot;),
+                           state = &quot;PA&quot;,
+                           geometry = TRUE,
+                           output = &quot;wide&quot;)
+pennsylvania %&gt;% 
+  ggplot(aes(fill = total_pop)) +
+    geom_sf() +
+    scale_fill_viridis_c()</code></pre>
+<p><img src="/post/map-census-data-with-r/index_files/figure-html/unnamed-chunk-14-1.png" width="672" /></p>
+<p><code>ggplot2</code> intelligently handles cases when we don’t have data for a certain polygon:</p>
+<pre class="r"><code>pennsylvania %&gt;% 
+  mutate(total_pop = case_when(NAME == &quot;Allegheny County, Pennsylvania&quot; ~ NA_real_,
+                               NAME != &quot;Allegheny County, Pennsylvania&quot; ~ total_pop)) %&gt;% 
+  ggplot(aes(fill = total_pop)) +
+    geom_sf() +
+    scale_fill_viridis_c()</code></pre>
+<p><img src="/post/map-census-data-with-r/index_files/figure-html/unnamed-chunk-15-1.png" width="672" /></p>
+<p>We can stack multiple polygons in the same graph to highlight Allegheny County:</p>
+<pre class="r"><code>allegheny &lt;- pennsylvania %&gt;% 
+  filter(str_detect(NAME, &quot;Allegheny&quot;))
+
+pennsylvania %&gt;% 
+  ggplot() +
+    geom_sf(aes(fill = total_pop)) +
+    geom_sf(data = allegheny, color = &quot;white&quot;, linetype = 2, size = 1, alpha = 0) +
+    scale_fill_viridis_c()</code></pre>
+<p><img src="/post/map-census-data-with-r/index_files/figure-html/unnamed-chunk-16-1.png" width="672" /></p>
+<p>We can also use <code>tidycensus</code> to download demographic data for census tracts.</p>
+<p>Set the variables we want to use first:</p>
+<pre class="r"><code>racevars &lt;- c(White = &quot;P005003&quot;, 
+              Black = &quot;P005004&quot;, 
+              Asian = &quot;P005006&quot;, 
+              Hispanic = &quot;P004003&quot;)
+#note that this data is long, not wide
+allegheny_tracts &lt;- get_decennial(geography = &quot;tract&quot;, variables = racevars, 
+                        state = &quot;PA&quot;, county = &quot;Allegheny County&quot;, geometry = TRUE,
+                        summary_var = &quot;P001001&quot;) </code></pre>
+<p>Calculate as a percentage of tract population:</p>
+<pre class="r"><code>allegheny_tracts &lt;- allegheny_tracts %&gt;% 
+  mutate(pct = 100 * value / summary_value)</code></pre>
+<p>Facet by <code>variable</code> and map the data:</p>
+<pre class="r"><code>allegheny_tracts %&gt;% 
+  ggplot(aes(fill = pct)) +
+    geom_sf(color = NA) +
+    facet_wrap(~variable) +
+    scale_fill_viridis_c()</code></pre>
+<p><img src="/post/map-census-data-with-r/index_files/figure-html/unnamed-chunk-19-1.png" width="672" /></p>
+<p>We can overlay the boundaries of Pittsburgh over the same graph.</p>
+<p>Download the <a href="https://catalog.data.gov/dataset/pittsburgh-city-boundary-cbe8f">boundary shapefile</a> and use <code>sf::st_read</code> to read it into R:</p>
+<pre class="r"><code>city_pgh &lt;- st_read(&quot;data/Pittsburgh_City_Boundary-shp/City_Boundary.shp&quot;)</code></pre>
+<pre><code>## Reading layer `City_Boundary&#39; from data source `/Users/conortompkins/github_repos/blog_hugo_academic/content/post/map-census-data-with-r/data/Pittsburgh_City_Boundary-shp/City_Boundary.shp&#39; using driver `ESRI Shapefile&#39;
+## Simple feature collection with 8 features and 8 fields
+## geometry type:  POLYGON
+## dimension:      XY
+## bbox:           xmin: -80.1 ymin: 40.4 xmax: -79.9 ymax: 40.5
+## geographic CRS: WGS 84</code></pre>
+<pre class="r"><code>allegheny_tracts %&gt;% 
+  ggplot() +
+    geom_sf(aes(fill = pct), color = NA) +
+    geom_sf(data = city_pgh, color = &quot;white&quot;, linetype = 2, size = 1, alpha = 0) +
+    facet_wrap(~variable) + 
+    scale_fill_viridis_c()</code></pre>
+<p><img src="/post/map-census-data-with-r/index_files/figure-html/unnamed-chunk-20-1.png" width="672" /></p>
+</div>
+<div id="working-with-other-data" class="section level3">
+<h3>Working with other data</h3>
+<div id="wprdc-311-data-and-city-wards" class="section level4">
+<h4>WPRDC 311 data and city wards</h4>
+<p>We can also download the shapefile for the <a href="https://catalog.data.gov/dataset/pittsburgh-wards">City of Pittsburgh wards</a>. The <a href="https://data.wprdc.org/dataset/311-data/resource/76fda9d0-69be-4dd5-8108-0de7907fc5a4">311 dataset</a> is tagged with the ward the request originated from, so we can use that to aggregate and map the total number of 311 requests per ward.</p>
+<pre class="r"><code>df_311 &lt;- read_csv(&quot;https://data.wprdc.org/datastore/dump/76fda9d0-69be-4dd5-8108-0de7907fc5a4&quot;) %&gt;% 
+  clean_names()</code></pre>
+<table class="table" style="margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:right;">
+request_id
+</th>
+<th style="text-align:left;">
+created_on
+</th>
+<th style="text-align:left;">
+request_type
+</th>
+<th style="text-align:left;">
+request_origin
+</th>
+<th style="text-align:right;">
+status
+</th>
+<th style="text-align:left;">
+department
+</th>
+<th style="text-align:left;">
+neighborhood
+</th>
+<th style="text-align:right;">
+council_district
+</th>
+<th style="text-align:right;">
+ward
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:right;">
+203364
+</td>
+<td style="text-align:left;">
+2017-12-15 14:53:00
+</td>
+<td style="text-align:left;">
+Street Obstruction/Closure
+</td>
+<td style="text-align:left;">
+Call Center
+</td>
+<td style="text-align:right;">
+1
+</td>
+<td style="text-align:left;">
+DOMI - Permits
+</td>
+<td style="text-align:left;">
+Central Northside
+</td>
+<td style="text-align:right;">
+1
+</td>
+<td style="text-align:right;">
+22
+</td>
+</tr>
+<tr>
+<td style="text-align:right;">
+200800
+</td>
+<td style="text-align:left;">
+2017-11-29 09:54:00
+</td>
+<td style="text-align:left;">
+Graffiti
+</td>
+<td style="text-align:left;">
+Control Panel
+</td>
+<td style="text-align:right;">
+1
+</td>
+<td style="text-align:left;">
+Police - Zones 1-6
+</td>
+<td style="text-align:left;">
+South Side Flats
+</td>
+<td style="text-align:right;">
+3
+</td>
+<td style="text-align:right;">
+16
+</td>
+</tr>
+<tr>
+<td style="text-align:right;">
+201310
+</td>
+<td style="text-align:left;">
+2017-12-01 13:23:00
+</td>
+<td style="text-align:left;">
+Litter
+</td>
+<td style="text-align:left;">
+Call Center
+</td>
+<td style="text-align:right;">
+1
+</td>
+<td style="text-align:left;">
+DPW - Street Maintenance
+</td>
+<td style="text-align:left;">
+Troy Hill
+</td>
+<td style="text-align:right;">
+1
+</td>
+<td style="text-align:right;">
+24
+</td>
+</tr>
+<tr>
+<td style="text-align:right;">
+200171
+</td>
+<td style="text-align:left;">
+2017-11-22 14:54:00
+</td>
+<td style="text-align:left;">
+Water Main Break
+</td>
+<td style="text-align:left;">
+Call Center
+</td>
+<td style="text-align:right;">
+1
+</td>
+<td style="text-align:left;">
+Pittsburgh Water and Sewer Authority
+</td>
+<td style="text-align:left;">
+Banksville
+</td>
+<td style="text-align:right;">
+2
+</td>
+<td style="text-align:right;">
+20
+</td>
+</tr>
+<tr>
+<td style="text-align:right;">
+193043
+</td>
+<td style="text-align:left;">
+2017-10-12 12:46:00
+</td>
+<td style="text-align:left;">
+Guide Rail
+</td>
+<td style="text-align:left;">
+Call Center
+</td>
+<td style="text-align:right;">
+1
+</td>
+<td style="text-align:left;">
+DPW - Construction Division
+</td>
+<td style="text-align:left;">
+East Hills
+</td>
+<td style="text-align:right;">
+9
+</td>
+<td style="text-align:right;">
+13
+</td>
+</tr>
+<tr>
+<td style="text-align:right;">
+196521
+</td>
+<td style="text-align:left;">
+2017-10-31 15:17:00
+</td>
+<td style="text-align:left;">
+Guide Rail
+</td>
+<td style="text-align:left;">
+Call Center
+</td>
+<td style="text-align:right;">
+1
+</td>
+<td style="text-align:left;">
+DPW - Construction Division
+</td>
+<td style="text-align:left;">
+East Hills
+</td>
+<td style="text-align:right;">
+9
+</td>
+<td style="text-align:right;">
+13
+</td>
+</tr>
+<tr>
+<td style="text-align:right;">
+193206
+</td>
+<td style="text-align:left;">
+2017-10-13 09:18:00
+</td>
+<td style="text-align:left;">
+Sidewalk/Curb/HC Ramp Maintenance
+</td>
+<td style="text-align:left;">
+Call Center
+</td>
+<td style="text-align:right;">
+1
+</td>
+<td style="text-align:left;">
+DOMI - Permits
+</td>
+<td style="text-align:left;">
+Mount Washington
+</td>
+<td style="text-align:right;">
+4
+</td>
+<td style="text-align:right;">
+19
+</td>
+</tr>
+<tr>
+<td style="text-align:right;">
+195917
+</td>
+<td style="text-align:left;">
+2017-10-27 10:23:00
+</td>
+<td style="text-align:left;">
+Manhole Cover
+</td>
+<td style="text-align:left;">
+Call Center
+</td>
+<td style="text-align:right;">
+1
+</td>
+<td style="text-align:left;">
+DOMI - Permits
+</td>
+<td style="text-align:left;">
+Bluff
+</td>
+<td style="text-align:right;">
+6
+</td>
+<td style="text-align:right;">
+1
+</td>
+</tr>
+<tr>
+<td style="text-align:right;">
+179176
+</td>
+<td style="text-align:left;">
+2017-08-14 14:00:00
+</td>
+<td style="text-align:left;">
+Neighborhood Issues
+</td>
+<td style="text-align:left;">
+Control Panel
+</td>
+<td style="text-align:right;">
+0
+</td>
+<td style="text-align:left;">
+NA
+</td>
+<td style="text-align:left;">
+Middle Hill
+</td>
+<td style="text-align:right;">
+6
+</td>
+<td style="text-align:right;">
+5
+</td>
+</tr>
+<tr>
+<td style="text-align:right;">
+190422
+</td>
+<td style="text-align:left;">
+2017-09-29 11:46:00
+</td>
+<td style="text-align:left;">
+Mayor’s Office
+</td>
+<td style="text-align:left;">
+Website
+</td>
+<td style="text-align:right;">
+1
+</td>
+<td style="text-align:left;">
+311
+</td>
+<td style="text-align:left;">
+North Oakland
+</td>
+<td style="text-align:right;">
+8
+</td>
+<td style="text-align:right;">
+4
+</td>
+</tr>
+</tbody>
+</table>
+<pre><code>## Simple feature collection with 35 features and 7 fields
+## geometry type:  POLYGON
+## dimension:      XY
+## bbox:           xmin: -80.1 ymin: 40.4 xmax: -79.9 ymax: 40.5
+## geographic CRS: WGS 84
+## First 10 features:
+##    fid wards wards_id ward wardtext shape_leng shape_area
+## 1    2     3        0   19       19     0.2389  0.0011446
+## 2    3     4        0   24       24     0.0734  0.0001901
+## 3    4     5        0   24       24     0.0274  0.0000210
+## 4    5     6        0   20       20     0.2888  0.0011755
+## 5    6     7        0   21       21     0.0619  0.0002074
+## 6    7     8        0   23       23     0.0480  0.0001031
+## 7    8     9        0   22       22     0.0593  0.0001967
+## 8    9    10        0   26       26     0.1915  0.0009079
+## 9   10    11        0   27       27     0.1173  0.0005849
+## 10  11    12        0   27       27     0.0400  0.0000634
+##                          geometry
+## 1  POLYGON ((-80 40.4, -80 40....
+## 2  POLYGON ((-80 40.5, -80 40....
+## 3  POLYGON ((-80 40.5, -80 40....
+## 4  POLYGON ((-80 40.4, -80 40....
+## 5  POLYGON ((-80 40.5, -80 40....
+## 6  POLYGON ((-80 40.5, -80 40....
+## 7  POLYGON ((-80 40.5, -80 40....
+## 8  POLYGON ((-80 40.5, -80 40....
+## 9  POLYGON ((-80 40.5, -80 40....
+## 10 POLYGON ((-80 40.5, -80 40....</code></pre>
+<p>Plot the ward polygons:</p>
+<pre class="r"><code>wards %&gt;% 
+  ggplot() +
+  geom_sf()</code></pre>
+<p><img src="/post/map-census-data-with-r/index_files/figure-html/unnamed-chunk-25-1.png" width="672" /></p>
+<p>Calculate the center of each ward. We will use this to label the wards on the map:</p>
+<pre class="r"><code>ward_labels &lt;- wards %&gt;% 
+  st_centroid() %&gt;% 
+  st_coordinates() %&gt;% 
+  as_tibble() %&gt;% 
+  clean_names()</code></pre>
+<table class="table" style="margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:right;">
+x
+</th>
+<th style="text-align:right;">
+y
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:right;">
+-80
+</td>
+<td style="text-align:right;">
+40.4
+</td>
+</tr>
+<tr>
+<td style="text-align:right;">
+-80
+</td>
+<td style="text-align:right;">
+40.5
+</td>
+</tr>
+<tr>
+<td style="text-align:right;">
+-80
+</td>
+<td style="text-align:right;">
+40.5
+</td>
+</tr>
+<tr>
+<td style="text-align:right;">
+-80
+</td>
+<td style="text-align:right;">
+40.4
+</td>
+</tr>
+<tr>
+<td style="text-align:right;">
+-80
+</td>
+<td style="text-align:right;">
+40.5
+</td>
+</tr>
+</tbody>
+</table>
+<p>Count the number of requests per ward:</p>
+<pre class="r"><code>df_311_count &lt;- df_311 %&gt;% 
+  count(ward, sort = TRUE)</code></pre>
+<p>Use <code>left_join</code> and <code>bind_cols</code> to join the count data with the coordinates:</p>
+<pre class="r"><code>ward_311 &lt;- wards %&gt;% 
+  left_join(df_311_count) %&gt;%
+  bind_cols(ward_labels)</code></pre>
+<pre><code>## Simple feature collection with 35 features and 10 fields
+## geometry type:  POLYGON
+## dimension:      XY
+## bbox:           xmin: -80.1 ymin: 40.4 xmax: -79.9 ymax: 40.5
+## geographic CRS: WGS 84
+## First 10 features:
+##    fid wards wards_id ward wardtext shape_leng shape_area     n   x    y
+## 1    2     3        0   19       19     0.2389  0.0011446 35823 -80 40.4
+## 2    3     4        0   24       24     0.0734  0.0001901  7049 -80 40.5
+## 3    4     5        0   24       24     0.0274  0.0000210  7049 -80 40.5
+## 4    5     6        0   20       20     0.2888  0.0011755 22617 -80 40.4
+## 5    6     7        0   21       21     0.0619  0.0002074  5120 -80 40.5
+## 6    7     8        0   23       23     0.0480  0.0001031  6394 -80 40.5
+## 7    8     9        0   22       22     0.0593  0.0001967  6043 -80 40.5
+## 8    9    10        0   26       26     0.1915  0.0009079 15065 -80 40.5
+## 9   10    11        0   27       27     0.1173  0.0005849 14013 -80 40.5
+## 10  11    12        0   27       27     0.0400  0.0000634 14013 -80 40.5
+##                          geometry
+## 1  POLYGON ((-80 40.4, -80 40....
+## 2  POLYGON ((-80 40.5, -80 40....
+## 3  POLYGON ((-80 40.5, -80 40....
+## 4  POLYGON ((-80 40.4, -80 40....
+## 5  POLYGON ((-80 40.5, -80 40....
+## 6  POLYGON ((-80 40.5, -80 40....
+## 7  POLYGON ((-80 40.5, -80 40....
+## 8  POLYGON ((-80 40.5, -80 40....
+## 9  POLYGON ((-80 40.5, -80 40....
+## 10 POLYGON ((-80 40.5, -80 40....</code></pre>
+<p>Plot the data:</p>
+<pre class="r"><code>ward_311 %&gt;% 
+  ggplot() +
+    geom_sf(aes(fill = n), color = NA) +
+    geom_label(aes(x, y, label = ward), size = 3) +
+    scale_fill_viridis_c(&quot;Number of 311 requests&quot;)</code></pre>
+<p><img src="/post/map-census-data-with-r/index_files/figure-html/unnamed-chunk-31-1.png" width="672" /></p>
+</div>
+<div id="wprdc-overdose-data" class="section level4">
+<h4>WPRDC overdose data</h4>
+<p>We can use the census data to adjust other data for per capita rates. For example, the WPRDC’s <a href="https://data.wprdc.org/dataset/allegheny-county-fatal-accidental-overdoses">overdose data</a> has the zip code that the overdose occurred in.</p>
+<p>First, download the overdose dataset and pull the population data for each zip code:</p>
+<pre class="r"><code>df_overdose &lt;- read_csv(&quot;https://data.wprdc.org/datastore/dump/1c59b26a-1684-4bfb-92f7-205b947530cf&quot;) %&gt;% 
+  clean_names() %&gt;% 
+  mutate(incident_zip = str_sub(incident_zip, 1, 5))
+
+all_zips &lt;- get_acs(geography = &quot;zip code tabulation area&quot;,
+                    variables = c(total_pop = &quot;B01003_001&quot;),
+                    geometry = TRUE,
+                    output = &quot;wide&quot;)</code></pre>
+<p>Then, aggregate the overdose data to the zip code and join the datasets:</p>
+<pre class="r"><code>df_overdose &lt;- df_overdose %&gt;% 
+  count(incident_zip, sort = TRUE)
+
+attempt1 &lt;- all_zips %&gt;%
+  semi_join(df_overdose, by = c(&quot;GEOID&quot; = &quot;incident_zip&quot;)) %&gt;% 
+  left_join(df_overdose, by = c(&quot;GEOID&quot; = &quot;incident_zip&quot;))
+
+attempt1 %&gt;% 
+  ggplot() +
+    geom_sf()</code></pre>
+<p><img src="/post/map-census-data-with-r/index_files/figure-html/unnamed-chunk-33-1.png" width="672" /></p>
+<p>Unfortunately the data is kind of messy and includes zip codes that aren’t in Allegheny County.</p>
+<p>We can use <code>st_intersection</code> to exclude all of the zip code polygons that do not fall within the <code>allegheny</code> county tibble we made earlier:</p>
+<pre class="r"><code>allegheny %&gt;% 
+  ggplot() +
+    geom_sf()</code></pre>
+<p><img src="/post/map-census-data-with-r/index_files/figure-html/unnamed-chunk-34-1.png" width="672" /></p>
+<p>Then, join the aggregated overdose data with <code>left_join</code>:</p>
+<pre class="r"><code>df_allegheny_overdose &lt;- st_intersection(allegheny, all_zips) %&gt;% 
+  left_join(df_overdose, by = c(&quot;GEOID.1&quot; = &quot;incident_zip&quot;))</code></pre>
+<p>Now we can calculate the per 1,000 overdose rate and plot the data:</p>
+<pre class="r"><code>df_allegheny_overdose %&gt;% 
+  filter(total_popE &gt;= 400) %&gt;% 
+  mutate(overdoses_per_capita = n / total_popE * 1000) %&gt;% 
+  ggplot(aes(fill = overdoses_per_capita)) +
+    geom_sf(color = NA) +
+    scale_fill_viridis_c()</code></pre>
+<p><img src="/post/map-census-data-with-r/index_files/figure-html/unnamed-chunk-36-1.png" width="672" /></p>
+</div>
+</div>
+<div id="ggmap-basemaps" class="section level3">
+<h3>{ggmap} basemaps</h3>
+<p>We can use <code>ggmap</code> to request a basemap from the Google Maps API.
+Get your API key <a href="https://cloud.google.com/maps-platform/">here</a></p>
+<pre class="r"><code>register_google(key = &quot;Your key here&quot;)</code></pre>
+<pre class="r"><code>pgh_map &lt;- get_map(location = c(lat = 40.445315, lon = -79.977104), zoom = 12)
+
+ggmap(pgh_map)</code></pre>
+<p><img src="/post/map-census-data-with-r/index_files/figure-html/unnamed-chunk-38-1.png" width="672" /></p>
+<p>There are multiple basemap styles available:</p>
+<pre class="r"><code>get_map(location = c(lat = 40.445315, lon = -79.977104), zoom = 12, maptype = &quot;satellite&quot;, source = &quot;google&quot;) %&gt;% 
+  ggmap()</code></pre>
+<p><img src="/post/map-census-data-with-r/index_files/figure-html/unnamed-chunk-39-1.png" width="672" /></p>
+<pre class="r"><code>get_map(location = c(lat = 40.445315, lon = -79.977104), zoom = 12, maptype = &quot;roadmap&quot;, source = &quot;google&quot;) %&gt;% 
+  ggmap()</code></pre>
+<p><img src="/post/map-census-data-with-r/index_files/figure-html/unnamed-chunk-40-1.png" width="672" /></p>
+<pre class="r"><code>get_map(location = c(lat = 40.445315, lon = -79.977104), zoom = 12, maptype = &quot;watercolor&quot;, source = &quot;google&quot;) %&gt;% 
+  ggmap()</code></pre>
+<p><img src="/post/map-census-data-with-r/index_files/figure-html/unnamed-chunk-41-1.png" width="672" /></p>
+<pre class="r"><code>get_map(location = c(lat = 40.445315, lon = -79.977104), zoom = 12, maptype = &quot;toner&quot;, source = &quot;stamen&quot;) %&gt;% 
+  ggmap()</code></pre>
+<p><img src="/post/map-census-data-with-r/index_files/figure-html/unnamed-chunk-42-1.png" width="672" /></p>
+<p>Combining maps from different systems requires us to use the same map projection. Google uses <code>4326</code>. Use <code>coord_sf</code> to set the projection:</p>
+<pre class="r"><code>ggmap(pgh_map) +
+  geom_sf(data = ward_311, aes(fill = n), inherit.aes = FALSE, color = NA, alpha = .7) +
+  geom_label(data = ward_311, aes(x, y, label = ward), size = 3) +
+  coord_sf(crs = st_crs(4326)) +
+  scale_fill_viridis_c(&quot;Number of 311 requests&quot;)</code></pre>
+<p><img src="/post/map-census-data-with-r/index_files/figure-html/unnamed-chunk-43-1.png" width="672" /></p>
+</div>
+</div>
+<div id="links" class="section level2">
+<h2>Links</h2>
+<ul>
+<li><a href="https://walkerke.github.io/tidycensus/articles/basic-usage.html" class="uri">https://walkerke.github.io/tidycensus/articles/basic-usage.html</a></li>
+<li><a href="https://walkerke.github.io/tidycensus/reference/get_acs.html" class="uri">https://walkerke.github.io/tidycensus/reference/get_acs.html</a></li>
+<li><a href="https://walkerke.github.io/tidycensus/articles/spatial-data.html" class="uri">https://walkerke.github.io/tidycensus/articles/spatial-data.html</a></li>
+<li><a href="https://walkerke.github.io/tidycensus/articles/other-datasets.html" class="uri">https://walkerke.github.io/tidycensus/articles/other-datasets.html</a></li>
+<li><a href="https://cengel.github.io/R-spatial/mapping.html" class="uri">https://cengel.github.io/R-spatial/mapping.html</a></li>
+<li><a href="https://www.r-spatial.org/r/2018/10/25/ggplot2-sf.html" class="uri">https://www.r-spatial.org/r/2018/10/25/ggplot2-sf.html</a></li>
+<li><a href="https://www.r-spatial.org/r/2018/10/25/ggplot2-sf-2.html" class="uri">https://www.r-spatial.org/r/2018/10/25/ggplot2-sf-2.html</a></li>
+<li><a href="https://www.r-spatial.org/r/2018/10/25/ggplot2-sf-3.html" class="uri">https://www.r-spatial.org/r/2018/10/25/ggplot2-sf-3.html</a></li>
+<li>google maps API key: <a href="https://cloud.google.com/maps-platform/" class="uri">https://cloud.google.com/maps-platform/</a></li>
+<li><a href="https://lucidmanager.org/geocoding-with-ggmap/" class="uri">https://lucidmanager.org/geocoding-with-ggmap/</a></li>
+<li><a href="https://github.com/rstudio/cheatsheets/blob/master/sf.pdf" class="uri">https://github.com/rstudio/cheatsheets/blob/master/sf.pdf</a></li>
+</ul>
+</div>
