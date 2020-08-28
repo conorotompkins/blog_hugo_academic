@@ -1,0 +1,198 @@
+---
+# Documentation: https://sourcethemes.com/academic/docs/managing-content/
+
+title: "Residential Zoning in Pittsburgh"
+subtitle: ""
+summary: ""
+authors: [Conor Tompkins]
+tags: [R, Pittsburgh]
+categories: [R, Pittsburgh]
+date: 2019-06-22
+lastmod: 2020-08-28T09:36:42-04:00
+featured: false
+draft: false
+
+# Featured image
+# To use, add an image named `featured.jpg/png` to your page's folder.
+# Focal points: Smart, Center, TopLeft, Top, TopRight, Left, Right, BottomLeft, Bottom, BottomRight.
+image:
+  caption: ""
+  focal_point: ""
+  preview_only: false
+
+# Projects (optional).
+#   Associate this post with one or more of your projects.
+#   Simply enter your project's folder or file name without extension.
+#   E.g. `projects = ["internal-project"]` references `content/project/deep-learning/index.md`.
+#   Otherwise, set `projects = []`.
+projects: []
+---
+
+
+
+<p>The <a href="https://www.nytimes.com/interactive/2019/06/18/upshot/cities-across-america-question-single-family-zoning.html">New York Times recently published an article</a> about zoning in U.S. cities, particularly single-unit detached residential housing. The article did not include Pittsburgh, so I downloaded the <a href="https://data.wprdc.org/dataset/zoning1">zone shapefile from the WPRDC</a> and made my own map.</p>
+<p>This blog quickly goes through the steps to make the map and other graphs about the data.</p>
+<p>First, load the required libraries and set up the environment:</p>
+<pre class="r"><code>library(tidyverse)
+library(sf)
+library(ggmap)
+library(janitor)
+library(hrbrthemes)
+
+options(scipen = 999)</code></pre>
+<p>Read in the shapefile with <code>st_read</code> and inspect the data with <code>glimpse</code>:</p>
+<pre class="r"><code>shapefile &lt;- st_read(&quot;data/Zoning-shp/Zoning.shp&quot;)</code></pre>
+<pre><code>## Reading layer `Zoning&#39; from data source `/Users/conortompkins/github_repos/blog_hugo_academic/content/post/residential-zoning-in-pittsburgh/data/Zoning-shp/Zoning.shp&#39; using driver `ESRI Shapefile&#39;
+## Simple feature collection with 1054 features and 18 fields
+## geometry type:  POLYGON
+## dimension:      XY
+## bbox:           xmin: -80.09534 ymin: 40.36161 xmax: -79.86577 ymax: 40.50097
+## geographic CRS: WGS 84</code></pre>
+<pre class="r"><code>glimpse(shapefile)</code></pre>
+<pre><code>## Rows: 1,054
+## Columns: 19
+## $ objectid   &lt;int&gt; 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,…
+## $ area       &lt;dbl&gt; 404170.093, 332097.787, 192093.378, 22816.707, 962349.849,…
+## $ perimeter  &lt;dbl&gt; 4020.2318, 3522.5948, 2748.8339, 715.3339, 4499.1899, 2498…
+## $ zoning_    &lt;int&gt; 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18, 19…
+## $ zoning_id  &lt;int&gt; 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18, 19…
+## $ zon_new    &lt;chr&gt; &quot;P&quot;, &quot;P&quot;, &quot;LNC&quot;, &quot;LNC&quot;, &quot;P&quot;, &quot;HC&quot;, &quot;LNC&quot;, &quot;R1D-M&quot;, &quot;R1D-M&quot;…
+## $ shape_leng &lt;dbl&gt; 4020.2318, 3522.5948, 2748.8339, 715.3339, 4499.1899, 2498…
+## $ correction &lt;chr&gt; NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA…
+## $ full_zonin &lt;chr&gt; &quot;PARKS AND OPEN SPACE&quot;, &quot;PARKS AND OPEN SPACE&quot;, &quot;LOCAL NEI…
+## $ legendtype &lt;chr&gt; &quot;Parks&quot;, &quot;Parks&quot;, &quot;Local Neighborhood Commercial&quot;, &quot;Local …
+## $ municode   &lt;chr&gt; &quot;http://library.municode.com/HTML/13525/level4/PIZOCO_TITN…
+## $ status     &lt;chr&gt; &quot;Approved&quot;, &quot;Approved&quot;, &quot;Approved&quot;, &quot;Approved&quot;, &quot;Approved&quot;…
+## $ created_us &lt;chr&gt; &quot;pgh.admin&quot;, &quot;pgh.admin&quot;, &quot;pgh.admin&quot;, &quot;pgh.admin&quot;, &quot;pgh.a…
+## $ created_da &lt;date&gt; 2020-06-02, 2020-06-02, 2020-06-02, 2020-06-02, 2020-06-0…
+## $ last_edite &lt;chr&gt; &quot;pgh.admin&quot;, &quot;pgh.admin&quot;, &quot;pgh.admin&quot;, &quot;pgh.admin&quot;, &quot;pgh.a…
+## $ last_edi_1 &lt;date&gt; 2020-06-02, 2020-06-02, 2020-06-02, 2020-06-02, 2020-06-0…
+## $ Shape__Are &lt;dbl&gt; 404170.093, 332097.787, 192093.378, 22816.707, 962349.849,…
+## $ Shape__Len &lt;dbl&gt; 4020.2318, 3522.5948, 2748.8339, 715.3339, 4499.1899, 2498…
+## $ geometry   &lt;POLYGON [°]&gt; POLYGON ((-79.9068 40.36172..., POLYGON ((-79.9013…</code></pre>
+<p>We need to munge the data to get it in shape for analysis. This makes some simple TRUE|FALSE flags for basic zone information and uses <code>case_when</code> to create <code>type</code>, which represents aggregated zone types.</p>
+<pre class="r"><code>df &lt;- shapefile %&gt;% 
+  mutate(residential = str_detect(full_zonin, &quot;RESIDENT&quot;),
+         single_unit = str_detect(full_zonin, &quot;SINGLE-UNIT&quot;),
+         attached = str_detect(full_zonin, &quot;ATTACHED&quot;),
+         type = case_when(residential == TRUE &amp; single_unit == TRUE &amp; attached == FALSE ~ &quot;Single-unit detached residential&quot;,
+                          residential == TRUE &amp; single_unit == FALSE | attached == TRUE ~ &quot;Other residential&quot;,
+                          full_zonin == &quot;EDUCATIONAL/MEDICAL INSTITUTION&quot; ~ &quot;Educational/Medical&quot;,
+                          residential == FALSE ~ &quot;Other non-residential&quot;),
+         type = factor(type, levels = c(&quot;Single-unit detached residential&quot;, 
+                                        &quot;Other residential&quot;,
+                                        &quot;Educational/Medical&quot;,
+                                        &quot;Other non-residential&quot;)),
+         alpha_flag = type == &quot;Single-unit detached residential&quot;)</code></pre>
+<pre><code>## Rows: 1,054
+## Columns: 23
+## $ objectid    &lt;int&gt; 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17…
+## $ area        &lt;dbl&gt; 404170.093, 332097.787, 192093.378, 22816.707, 962349.849…
+## $ perimeter   &lt;dbl&gt; 4020.2318, 3522.5948, 2748.8339, 715.3339, 4499.1899, 249…
+## $ zoning_     &lt;int&gt; 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18, 1…
+## $ zoning_id   &lt;int&gt; 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18, 1…
+## $ zon_new     &lt;chr&gt; &quot;P&quot;, &quot;P&quot;, &quot;LNC&quot;, &quot;LNC&quot;, &quot;P&quot;, &quot;HC&quot;, &quot;LNC&quot;, &quot;R1D-M&quot;, &quot;R1D-M…
+## $ shape_leng  &lt;dbl&gt; 4020.2318, 3522.5948, 2748.8339, 715.3339, 4499.1899, 249…
+## $ correction  &lt;chr&gt; NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, N…
+## $ full_zonin  &lt;chr&gt; &quot;PARKS AND OPEN SPACE&quot;, &quot;PARKS AND OPEN SPACE&quot;, &quot;LOCAL NE…
+## $ legendtype  &lt;chr&gt; &quot;Parks&quot;, &quot;Parks&quot;, &quot;Local Neighborhood Commercial&quot;, &quot;Local…
+## $ municode    &lt;chr&gt; &quot;http://library.municode.com/HTML/13525/level4/PIZOCO_TIT…
+## $ status      &lt;chr&gt; &quot;Approved&quot;, &quot;Approved&quot;, &quot;Approved&quot;, &quot;Approved&quot;, &quot;Approved…
+## $ created_us  &lt;chr&gt; &quot;pgh.admin&quot;, &quot;pgh.admin&quot;, &quot;pgh.admin&quot;, &quot;pgh.admin&quot;, &quot;pgh.…
+## $ created_da  &lt;date&gt; 2020-06-02, 2020-06-02, 2020-06-02, 2020-06-02, 2020-06-…
+## $ last_edite  &lt;chr&gt; &quot;pgh.admin&quot;, &quot;pgh.admin&quot;, &quot;pgh.admin&quot;, &quot;pgh.admin&quot;, &quot;pgh.…
+## $ last_edi_1  &lt;date&gt; 2020-06-02, 2020-06-02, 2020-06-02, 2020-06-02, 2020-06-…
+## $ Shape__Are  &lt;dbl&gt; 404170.093, 332097.787, 192093.378, 22816.707, 962349.849…
+## $ Shape__Len  &lt;dbl&gt; 4020.2318, 3522.5948, 2748.8339, 715.3339, 4499.1899, 249…
+## $ residential &lt;lgl&gt; FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, TRUE, TR…
+## $ single_unit &lt;lgl&gt; FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, TRUE, TR…
+## $ attached    &lt;lgl&gt; FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, F…
+## $ type        &lt;fct&gt; Other non-residential, Other non-residential, Other non-r…
+## $ alpha_flag  &lt;lgl&gt; FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, TRUE, TR…</code></pre>
+<p>This counts the number of rows per full zone description (<code>full_zonin</code>) and <code>type</code>:</p>
+<pre class="r"><code>df_zones &lt;- df %&gt;% 
+  count(full_zonin, type, sort = TRUE) %&gt;% 
+  st_drop_geometry()</code></pre>
+<pre><code>## Rows: 59
+## Columns: 3
+## $ full_zonin &lt;chr&gt; &quot;PARKS AND OPEN SPACE&quot;, &quot;LOCAL NEIGHBORHOOD COMMERCIAL&quot;, &quot;…
+## $ type       &lt;fct&gt; Other non-residential, Other non-residential, Single-unit …
+## $ n          &lt;int&gt; 149, 126, 75, 69, 65, 52, 51, 44, 43, 42, 41, 37, 36, 20, …</code></pre>
+<p>Create a basic bar chart to show the distribution of <code>type</code>:</p>
+<pre class="r"><code>df %&gt;% 
+  st_drop_geometry() %&gt;% 
+  group_by(type, residential) %&gt;% 
+  summarize(area = sum(area)) %&gt;% 
+  ungroup() %&gt;% 
+  mutate(type = fct_reorder(type, area)) %&gt;% 
+  ggplot(aes(type, area / 1000000, fill = residential)) +
+    geom_col() +
+    scale_y_comma() +
+    scale_fill_discrete(&quot;Is the zone residential?&quot;) +
+    labs(x = &quot;Zone type&quot;,
+         y = &quot;Land area in millions of feet&quot;) +
+    coord_flip() +
+    theme_ipsum()</code></pre>
+<p><img src="/post/residential-zoning-in-pittsburgh/index_files/figure-html/unnamed-chunk-7-1.png" width="864" /></p>
+<p>Use a bar chart to show the distribution of <code>full_zonin</code>:</p>
+<pre class="r"><code>df %&gt;% 
+  st_drop_geometry() %&gt;% 
+  group_by(full_zonin, residential) %&gt;% 
+  summarize(area = sum(area)) %&gt;% 
+  ungroup() %&gt;% 
+  mutate(full_zonin = fct_reorder(full_zonin, area)) %&gt;% 
+  ggplot(aes(full_zonin, area / 1000000, fill = residential)) +
+    geom_col() +
+    scale_y_comma() +
+    scale_fill_discrete(&quot;Is the zone residential?&quot;) +
+    labs(x = &quot;Full zone description&quot;,
+         y = &quot;Land area in millions of feet&quot;) +
+    coord_flip() +
+    theme_ipsum()</code></pre>
+<p><img src="/post/residential-zoning-in-pittsburgh/index_files/figure-html/unnamed-chunk-8-1.png" width="1152" /></p>
+<p>This calculates the total land area zoned for any type of residential housing:</p>
+<pre class="r"><code>df %&gt;% 
+  st_drop_geometry() %&gt;% 
+  mutate(single_unit_flag = type == &quot;Single-unit detached residential&quot;) %&gt;% 
+  filter(residential == TRUE) %&gt;% 
+  summarize(total_area = sum(area))</code></pre>
+<pre><code>##   total_area
+## 1  770835393</code></pre>
+<p>This calculates the % of residential zoning that is zoned for single-unit detached residential housing units:</p>
+<pre class="r"><code>df %&gt;% 
+  st_drop_geometry() %&gt;% 
+  filter(residential == TRUE) %&gt;% 
+  mutate(single_unit_flag = (type == &quot;Single-unit detached residential&quot;)) %&gt;% 
+  group_by(single_unit_flag) %&gt;% 
+  summarize(zone_area = sum(area)) %&gt;% 
+  mutate(pct_area = zone_area / sum(zone_area))</code></pre>
+<pre><code>## # A tibble: 2 x 3
+##   single_unit_flag  zone_area pct_area
+##   &lt;lgl&gt;                 &lt;dbl&gt;    &lt;dbl&gt;
+## 1 FALSE            335471796.    0.435
+## 2 TRUE             435363597.    0.565</code></pre>
+<p>This creates a map of the zones, fills them by <code>type</code>, and overlays it on a GoogleMaps basemap. I also insert the boundaries of the City of Pittsburgh.</p>
+<pre class="r"><code>city_boundary &lt;- st_read(&quot;data/Pittsburgh_City_Boundary-shp/City_Boundary.shp&quot;)</code></pre>
+<pre><code>## Reading layer `City_Boundary&#39; from data source `/Users/conortompkins/github_repos/blog_hugo_academic/content/post/residential-zoning-in-pittsburgh/data/Pittsburgh_City_Boundary-shp/City_Boundary.shp&#39; using driver `ESRI Shapefile&#39;
+## Simple feature collection with 8 features and 8 fields
+## geometry type:  POLYGON
+## dimension:      XY
+## bbox:           xmin: -80.09534 ymin: 40.36161 xmax: -79.86577 ymax: 40.50097
+## geographic CRS: WGS 84</code></pre>
+<pre class="r"><code>#register_google(key = &quot;your key here&quot;)
+pgh_map &lt;- get_map(location = c(lat = 40.445315, lon = -79.977104), 
+                   zoom = 12, maptype = &quot;roadmap&quot;, source = &quot;google&quot;)
+
+
+ggmap(pgh_map) +
+  geom_sf(data = df %&gt;% filter(type != &quot;Other non-residential&quot;), aes(fill = type), inherit.aes = FALSE, size = .5, alpha = 1, color = NA) +
+  geom_sf(data = city_boundary, inherit.aes = FALSE, alpha = 0, size = 2) +
+  coord_sf(crs = st_crs(4326)) +
+  scale_fill_manual(&quot;Zone type&quot;,
+                      values = c(&quot;#ea60b9&quot;, &quot;#4cafc5&quot;, &quot;yellow&quot;, &quot;light grey&quot;)) +
+  labs(title = &quot;56% of residential zoned land area is single-family detached residential&quot;,
+         subtitle = &quot;City of Pittsburgh zoning&quot;,
+         caption = &quot;@conor_tompkins, data from WPRDC&quot;) +
+  theme_void()</code></pre>
+<p><img src="/post/residential-zoning-in-pittsburgh/index_files/figure-html/unnamed-chunk-11-1.png" width="1152" /></p>
+<p>I used <code>scale_fill_manual</code> to manually set the color palette to match the NYTimes article.</p>
