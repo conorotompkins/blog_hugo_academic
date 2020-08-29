@@ -1,0 +1,145 @@
+---
+# Documentation: https://sourcethemes.com/academic/docs/managing-content/
+
+title: "Animating Growth of Allegheny County"
+subtitle: ""
+summary: ""
+authors: [Conor Tompkins]
+tags: [R, Allegheny County, WPRDC, Housing]
+categories: [R, Allegheny County, WPRDC, Housing]
+date: 2019-03-31
+lastmod: 2019-03-31
+featured: false
+draft: false
+
+# Featured image
+# To use, add an image named `featured.jpg/png` to your page's folder.
+# Focal points: Smart, Center, TopLeft, Top, TopRight, Left, Right, BottomLeft, Bottom, BottomRight.
+image:
+  caption: ""
+  focal_point: ""
+  preview_only: false
+
+# Projects (optional).
+#   Associate this post with one or more of your projects.
+#   Simply enter your project's folder or file name without extension.
+#   E.g. `projects = ["internal-project"]` references `content/project/deep-learning/index.md`.
+#   Otherwise, set `projects = []`.
+projects: []
+---
+
+
+
+<p>In this post I will show how to create animated graphs that illustrate the increase in buildings in Allegheny County.</p>
+<p>One caveat about the data: it only includes parcels that were sold at some point. If the parcel was not sold, it is not included in this data. For example, a structure that was torn down and replaced <strong>but</strong> was not sold is not included. It is also reasonable to assume that the data quality decreases the older the records are. There may be a large amount of missing data.</p>
+<p>The shapefiles for the parcels come from <a href="http://www.pasda.psu.edu/uci/DataSummary.aspx?dataset=1214">Pennsylvania Spatial Data Access</a>.</p>
+<p>The data about the construction dates comes from the <a href="http://www.wprdc.org/">WPRDC’s</a> <a href="http://tools.wprdc.org/parcels-n-at/#">Parcels n’at</a> dashboard. To get the relevant data, draw a box around entire county, select the “Year Built” field in the Property Assessments section, and then download the data. It will take a while to download data for the entire county.</p>
+<p>Set up the environment:</p>
+<pre class="r"><code>library(tidyverse)
+library(janitor)
+library(broom)
+library(sf)
+library(scales)
+library(gganimate)
+library(lwgeom)
+
+options(scipen = 999, digits = 4)
+
+theme_set(theme_bw())
+
+my_caption &lt;- &quot;@conor_tompkins - data from @WPRDC&quot;</code></pre>
+<p>This reads in data about the land parcel (lot lines):</p>
+<pre class="r"><code>df &lt;- read_csv(&quot;data/parcel_data.csv&quot;, progress = FALSE) %&gt;% 
+  clean_names() %&gt;% 
+  select(-geom)</code></pre>
+<p>This reads in the parcel geometry</p>
+<pre class="r"><code>file &lt;- &quot;data/AlleghenyCounty_Parcels202008/AlleghenyCounty_Parcels202008.shp&quot;
+file</code></pre>
+<pre><code>## [1] &quot;data/AlleghenyCounty_Parcels202008/AlleghenyCounty_Parcels202008.shp&quot;</code></pre>
+<pre class="r"><code>shapefile &lt;- st_read(file)</code></pre>
+<pre><code>## Reading layer `AlleghenyCounty_Parcels202008&#39; from data source `/Users/conortompkins/github_repos/blog_hugo_academic/content/post/animating-growth-of-allegheny-county/data/AlleghenyCounty_Parcels202008/AlleghenyCounty_Parcels202008.shp&#39; using driver `ESRI Shapefile&#39;
+## Simple feature collection with 582504 features and 9 fields
+## geometry type:  MULTIPOLYGON
+## dimension:      XY
+## bbox:           xmin: 1241000 ymin: 321300 xmax: 1430000 ymax: 497900
+## projected CRS:  NAD83 / Pennsylvania South (ftUS)</code></pre>
+<p>Next we have to clean up the parcel geometry:</p>
+<pre class="r"><code>valid_check &lt;- shapefile %&gt;% 
+  slice(1:nrow(shapefile)) %&gt;% 
+  pull(geometry) %&gt;% 
+  map(st_is_valid) %&gt;% 
+  unlist()
+
+shapefile$validity_check &lt;- valid_check
+
+shapefile &lt;- shapefile %&gt;% 
+  filter(validity_check == TRUE)</code></pre>
+<pre class="r"><code>shapefile &lt;- shapefile %&gt;% 
+  st_make_valid() %&gt;% 
+  clean_names() %&gt;% 
+  mutate(pin = as.character(pin))</code></pre>
+<p>Then, join the parcel geometry and parcel data:</p>
+<pre class="r"><code>parcel_data &lt;- shapefile %&gt;% 
+  left_join(df)</code></pre>
+<p>This turns the parcel geometry into <code>(x, y)</code> coordinates:</p>
+<pre class="r"><code>centroids &lt;- parcel_data %&gt;% 
+  st_centroid() %&gt;% 
+  st_coordinates() %&gt;% 
+  as_tibble() %&gt;% 
+  clean_names()</code></pre>
+<p>We can plot the coordinates to confirm that the locations make sense:</p>
+<pre class="r"><code>centroids %&gt;% 
+  distinct(x, y) %&gt;% 
+  ggplot(aes(x, y)) +
+  geom_point(size = .1, alpha = .1) +
+  theme_void() +
+  coord_equal()</code></pre>
+<p><img src="/post/animating-growth-of-allegheny-county/index_files/figure-html/unnamed-chunk-8-1.png" width="672" /></p>
+<p>This plot shows that there is one row where <code>yearblt_asmt</code> is zero. That doesn’t make sense, so we will exclude it later.</p>
+<pre class="r"><code>df %&gt;% 
+  ggplot(aes(yearblt_asmt)) +
+  geom_density() +
+  geom_rug() +
+  labs(title = &quot;Structures in Allegheny County&quot;,
+       x = &quot;Year built&quot;,
+       y = &quot;Density&quot;,
+       subtitle = my_caption)</code></pre>
+<p><img src="/post/animating-growth-of-allegheny-county/index_files/figure-html/unnamed-chunk-9-1.png" width="672" /></p>
+<p>This combines the <code>parcel_data</code> and <code>centroid</code> data:</p>
+<pre class="r"><code>parcel_geometry_cleaned &lt;- bind_cols(parcel_data, centroids) %&gt;% 
+  select(pin, x, y, yearblt_asmt) %&gt;%
+  mutate(yearblt_asmt = as.integer(yearblt_asmt)) %&gt;% 
+  filter(!is.na(yearblt_asmt),
+         yearblt_asmt &gt; 1000) %&gt;% 
+  st_set_geometry(NULL)</code></pre>
+<p>This plots the culmulative sum of structures built:</p>
+<pre class="r"><code>parcel_cumulative &lt;- parcel_geometry_cleaned %&gt;% 
+  select(pin, yearblt_asmt) %&gt;% 
+  arrange(yearblt_asmt) %&gt;% 
+  count(yearblt_asmt) %&gt;% 
+  mutate(cumulative_n = cumsum(n)) %&gt;% 
+  ggplot(aes(yearblt_asmt, cumulative_n)) +
+  geom_line() +
+  geom_point() +
+  scale_y_continuous(label = comma) +
+    labs(title = &quot;Cumulative sum of structures built in Allegheny County&quot;,
+       x = &quot;Year Built&quot;,
+       y = &quot;Cumulative sum&quot;,
+       caption = my_caption) +
+  transition_reveal(yearblt_asmt)
+
+parcel_cumulative</code></pre>
+<p><img src="/post/animating-growth-of-allegheny-county/index_files/figure-html/unnamed-chunk-11-1.gif" /><!-- --></p>
+<p>This creates a graph of the structures built in Allegheny County, colored by the construction year.</p>
+<pre class="r"><code>parcel_geometry_cleaned %&gt;% 
+  ggplot(aes(x, y, color = yearblt_asmt, group = pin)) +
+  geom_point(alpha = .3, size = .1) +
+  scale_color_viridis_c(&quot;Year structure was built&quot;) +
+  theme_void() +
+  theme(axis.text = element_blank(),
+        axis.title = element_blank()) +
+  labs(title = &quot;Allegheny County land parcels&quot;,
+       subtitle = &quot;Year built: {frame_along}&quot;,
+       caption = &quot;@conor_tompkins, data from @WPRDC&quot;) +
+  transition_reveal(yearblt_asmt)</code></pre>
+<p><img src="/post/animating-growth-of-allegheny-county/index_files/figure-html/unnamed-chunk-12-1.gif" /><!-- --></p>
