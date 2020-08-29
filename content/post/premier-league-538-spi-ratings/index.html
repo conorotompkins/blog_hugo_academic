@@ -1,0 +1,152 @@
+---
+# Documentation: https://sourcethemes.com/academic/docs/managing-content/
+
+title: "Premier League 538 Spi Ratings"
+subtitle: ""
+summary: ""
+authors: [Conor Tompkins]
+tags: [R, Pittsburgh, 538, Soccer]
+categories: [R, Pittsburgh, 538, Soccer]
+date: 2019-04-07
+lastmod: 2019-04-07
+featured: false
+draft: false
+
+# Featured image
+# To use, add an image named `featured.jpg/png` to your page's folder.
+# Focal points: Smart, Center, TopLeft, Top, TopRight, Left, Right, BottomLeft, Bottom, BottomRight.
+image:
+  caption: ""
+  focal_point: ""
+  preview_only: false
+
+# Projects (optional).
+#   Associate this post with one or more of your projects.
+#   Simply enter your project's folder or file name without extension.
+#   E.g. `projects = ["internal-project"]` references `content/project/deep-learning/index.md`.
+#   Otherwise, set `projects = []`.
+projects: []
+---
+
+
+
+<p>538’s <a href="https://projects.fivethirtyeight.com/soccer-predictions/">Soccer Power Index (SPI)</a> rates the quality of soccer teams from a variety of leagues around the world. In this post I’ll use <code>gganimate</code> to animate team SPI over the past 3 seasons.</p>
+<p>The SPI data is available on 538’s <a href="https://github.com/fivethirtyeight/data/tree/master/soccer-spi">GitHub repo</a>.</p>
+<p>Set up the environment:</p>
+<pre class="r"><code>library(tidyverse)
+library(purrr)
+library(gganimate)
+library(ggrepel)
+library(broom)
+library(lubridate)
+
+theme_set(theme_minimal(base_size = 18))</code></pre>
+<p>Load the data and make the data long, instead of having different columns for home and away results:</p>
+<pre class="r"><code>data &lt;- read_csv(&quot;https://projects.fivethirtyeight.com/soccer-api/club/spi_matches.csv&quot;)
+
+df_home &lt;- data %&gt;% 
+  select(team1, date, league, spi1) %&gt;% 
+  rename(team = team1,
+         spi = spi1) %&gt;% 
+  mutate(venue = &quot;home&quot;)
+
+df_away &lt;- data %&gt;% 
+  select(team2, date, league, spi2) %&gt;% 
+  rename(team = team2,
+         spi = spi2) %&gt;% 
+  mutate(venue = &quot;away&quot;)
+
+df_all &lt;- bind_rows(df_home, df_away) %&gt;% 
+  filter(date &lt; &quot;2019-04-07&quot;) %&gt;% 
+  arrange(league, team, date) %&gt;% 
+  group_by(league, team) %&gt;% 
+  mutate(team_game_number = dense_rank(date)) %&gt;% 
+  ungroup()</code></pre>
+<p>Filter to EPL teams and add a <code>season</code> column:</p>
+<pre class="r"><code>df_epl &lt;- df_all %&gt;% 
+  filter(date &lt; Sys.Date(),
+         league == &quot;Barclays Premier League&quot;)
+
+season1 &lt;- tibble(date = seq(ymd(&#39;2016-08-13&#39;), ymd(&#39;2017-05-21&#39;), by=&#39;days&#39;),
+                  season = 1)
+
+season2 &lt;- tibble(date = seq(ymd(&#39;2017-08-11&#39;), ymd(&#39;2018-05-13&#39;), by=&#39;days&#39;),
+                  season = 2)
+
+season3 &lt;- tibble(date = seq(ymd(&#39;2018-08-10&#39;), ymd(&#39;2019-04-06&#39;), by=&#39;days&#39;),
+                  season = 3)
+
+seasons &lt;- bind_rows(season1, season2, season3)
+
+df_epl_smooth &lt;- df_epl %&gt;%
+  left_join(seasons)</code></pre>
+<p>Calculate the smoothed SPI per team per season using loess:</p>
+<pre class="r"><code>df_epl_smooth &lt;- df_epl_smooth %&gt;% 
+  nest(-c(team, season)) %&gt;% 
+  mutate(m = map(data, loess,
+                          formula = spi ~ team_game_number, span = .5),
+         spi_smooth = purrr::map(m, `[[`, &quot;fitted&quot;))
+
+df_epl_smooth &lt;- df_epl_smooth %&gt;% 
+  select(-m) %&gt;% 
+  unnest()
+
+df_epl_last &lt;- df_epl %&gt;% 
+  group_by(team) %&gt;% 
+  summarize(date = last(date),
+            spi = last(spi))</code></pre>
+<p>Create the animation:</p>
+<pre class="r"><code>spi_smooth_gif &lt;- df_epl_smooth %&gt;% 
+  ggplot(aes(date, spi_smooth, color = team, group = team)) +
+  geom_line() +
+  geom_point(size = 2) +
+  geom_segment(aes(xend = ymd(&quot;2019-04-05&quot;), yend = spi_smooth), linetype = 2, colour = &#39;grey&#39;) +
+  geom_label(aes(x = ymd(&quot;2019-04-05&quot;), label = team),
+             hjust = -.1,
+             vjust = 0) +
+  geom_rect(xmin = ymd(&quot;2017-05-25&quot;), xmax = ymd(&quot;2017-08-12&quot;),
+            ymin = -Inf, ymax = Inf,
+            fill = &quot;white&quot;, color = &quot;white&quot;) +
+  geom_rect(xmin = ymd(&quot;2018-05-18&quot;), xmax = ymd(&quot;2018-08-10&quot;),
+                ymin = -Inf, ymax = Inf, fill = &quot;white&quot;, color = &quot;white&quot;) +
+  guides(color = FALSE) +
+  labs(title = &quot;Premier League&quot;,
+       subtitle = &quot;538 Soccer Power Index&quot;,
+       x = NULL,
+       y = &quot;538 Soccer Power Index&quot;,
+       caption = &quot;@conor_tompkins&quot;) +
+  transition_reveal(date) +
+  coord_cartesian(clip = &#39;off&#39;) +
+  theme(plot.margin = margin(5.5, 110, 5.5, 5.5))
+
+animate(spi_smooth_gif, height = 900, width = 900, duration = 15, nframes = 300)</code></pre>
+<p><img src="/post/premier-league-538-spi-ratings/index_files/figure-html/unnamed-chunk-5-1.gif" /><!-- --></p>
+<p>Observers of the EPL will know that in any given season there are 2-3 tiers of teams, given the economics and relegation structure of the league. In 2018 the difference between the top 6 and the rest of the league was particularly stark. This is partly due to the difficulties that Everton experienced after they sold Lukaku and signed older and less skilled players. This graph highlights Everton’s SPI:</p>
+<pre class="r"><code>everton_gif &lt;- df_epl_smooth %&gt;% 
+  mutate(everton_flag = case_when(team == &quot;Everton&quot; ~ &quot;Everton&quot;,
+                                  team != &quot;Everton&quot; ~ &quot;&quot;)) %&gt;% 
+  ggplot(aes(date, spi_smooth, color = everton_flag, group = team)) +
+  geom_line() +
+  geom_point(size = 2) +
+  geom_segment(aes(xend = ymd(&quot;2019-04-05&quot;), yend = spi_smooth), linetype = 2, colour = &#39;grey&#39;) +
+  geom_label(aes(x = ymd(&quot;2019-04-05&quot;), label = team),
+             hjust = -.1,
+             vjust = 0) +
+  geom_rect(xmin = ymd(&quot;2017-05-25&quot;), xmax = ymd(&quot;2017-08-12&quot;),
+            ymin = -Inf, ymax = Inf,
+            fill = &quot;white&quot;, color = &quot;white&quot;) +
+  geom_rect(xmin = ymd(&quot;2018-05-18&quot;), xmax = ymd(&quot;2018-08-10&quot;),
+                ymin = -Inf, ymax = Inf, fill = &quot;white&quot;, color = &quot;white&quot;) +
+  scale_color_manual(values = c(&quot;light grey&quot;, &quot;blue&quot;)) +
+  guides(color = FALSE) +
+  labs(title = &quot;Premier League&quot;,
+       subtitle = &quot;538 Soccer Power Index&quot;,
+       x = NULL,
+       y = &quot;538 Soccer Power Index&quot;,
+       caption = &quot;@conor_tompkins&quot;) +
+  transition_reveal(date) +
+  coord_cartesian(clip = &#39;off&#39;) +
+  theme(plot.margin = margin(5.5, 110, 5.5, 5.5))
+
+animate(everton_gif, height = 900, width = 900, duration = 15, nframes = 300)</code></pre>
+<p><img src="/post/premier-league-538-spi-ratings/index_files/figure-html/unnamed-chunk-6-1.gif" /><!-- --></p>
