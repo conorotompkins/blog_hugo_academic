@@ -34,7 +34,7 @@ knitr::opts_chunk$set(echo = TRUE,
                       message = FALSE)
 ```
 
-##Setup
+## Setup
 
 These are the libraries and graph theme I will use:
 ```{r}
@@ -120,7 +120,7 @@ df %>%
   filter(!(contributor_state == recipient_state)) -> df_intermediate
 ```
 
-##First attempt
+## First attempt
 
 This is how the data looks when graphed as a typical network graph. The nodes (states) are not positioned geographically, which makes it difficult to understand. Aggregate donations less than $1,000,000 are excluded.
 ```{r}
@@ -139,7 +139,7 @@ df_intermediate %>%
   scale_edge_alpha_continuous("Donations in millions USD", range = c(.1, 1))
 ```
 
-##Mapping node positions to state geography
+## Mapping node positions to state geography
 
 This code turns the data into a network object and sets the minimum threshhold at $1 million
 ```{r}
@@ -193,7 +193,7 @@ ggraph(manual_layout) +
 p
 ```
 
-##To and From
+## To and From
 
 This shows all the donations from California. Note the different scale of funds.
 ```{r echo=FALSE}
@@ -298,7 +298,7 @@ ggraph(manual_layout) +
 p_tx
 ```
 
-##References
+## References
 
 * https://github.com/PublicI/actblue-analysis
 * https://datascience.blog.wzb.eu/2018/05/31/three-ways-of-visualizing-a-graph-on-a-map/

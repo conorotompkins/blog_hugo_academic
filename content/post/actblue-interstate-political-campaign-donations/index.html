@@ -31,7 +31,8 @@ projects: []
 
 
 <p>ActBlue is an online service that allows people to make donations to the political campaigns of Democractic candidates across the country. This post uses graph theory to analyze how political donations moved across states.</p>
-<p>##Setup</p>
+<div id="setup" class="section level2">
+<h2>Setup</h2>
 <p>These are the libraries and graph theme I will use:</p>
 <pre class="r"><code>library(tidyverse)
 library(maps)
@@ -107,7 +108,9 @@ df %&gt;%
          sum = round(sum, digits = 2)) %&gt;% 
   na.omit() %&gt;% 
   filter(!(contributor_state == recipient_state)) -&gt; df_intermediate</code></pre>
-<p>##First attempt</p>
+</div>
+<div id="first-attempt" class="section level2">
+<h2>First attempt</h2>
 <p>This is how the data looks when graphed as a typical network graph. The nodes (states) are not positioned geographically, which makes it difficult to understand. Aggregate donations less than $1,000,000 are excluded.</p>
 <pre class="r"><code>df_intermediate %&gt;% 
   as_tbl_graph(directed = TRUE) %&gt;% 
@@ -123,7 +126,9 @@ df %&gt;%
   scale_edge_width_continuous(&quot;Donations in millions USD&quot;, range = c(.3, 2)) +
   scale_edge_alpha_continuous(&quot;Donations in millions USD&quot;, range = c(.1, 1))</code></pre>
 <p><img src="/post/actblue-interstate-political-campaign-donations/index_files/figure-html/unnamed-chunk-10-1.png" width="672" /></p>
-<p>##Mapping node positions to state geography</p>
+</div>
+<div id="mapping-node-positions-to-state-geography" class="section level2">
+<h2>Mapping node positions to state geography</h2>
 <p>This code turns the data into a network object and sets the minimum threshhold at $1 million</p>
 <pre class="r"><code>df_intermediate %&gt;% 
   as_tbl_graph(directed = TRUE) -&gt; g
@@ -165,7 +170,9 @@ str(node_pos)</code></pre>
 
 p</code></pre>
 <p><img src="/post/actblue-interstate-political-campaign-donations/index_files/figure-html/unnamed-chunk-15-1.png" width="672" /></p>
-<p>##To and From</p>
+</div>
+<div id="to-and-from" class="section level2">
+<h2>To and From</h2>
 <p>This shows all the donations from California. Note the different scale of funds.</p>
 <pre class="r"><code># manual_layout &lt;- create_layout(graph = g,
 #                                layout = &quot;manual&quot;, node.positions = node_pos)</code></pre>
@@ -206,9 +213,12 @@ p_ca</code></pre>
 
 p_tx</code></pre>
 <p><img src="/post/actblue-interstate-political-campaign-donations/index_files/figure-html/unnamed-chunk-21-1.png" width="672" /></p>
-<p>##References</p>
+</div>
+<div id="references" class="section level2">
+<h2>References</h2>
 <ul>
 <li><a href="https://github.com/PublicI/actblue-analysis" class="uri">https://github.com/PublicI/actblue-analysis</a></li>
 <li><a href="https://datascience.blog.wzb.eu/2018/05/31/three-ways-of-visualizing-a-graph-on-a-map/" class="uri">https://datascience.blog.wzb.eu/2018/05/31/three-ways-of-visualizing-a-graph-on-a-map/</a></li>
 <li><a href="https://lookatthhedata.netlify.com/2017-11-12-mapping-your-oyster-card-journeys-in-london-with-tidygraph-and-ggraph/" class="uri">https://lookatthhedata.netlify.com/2017-11-12-mapping-your-oyster-card-journeys-in-london-with-tidygraph-and-ggraph/</a></li>
 </ul>
+</div>
