@@ -174,8 +174,6 @@ p</code></pre>
 <div id="to-and-from" class="section level2">
 <h2>To and From</h2>
 <p>This shows all the donations from California. Note the different scale of funds.</p>
-<pre class="r"><code># manual_layout &lt;- create_layout(graph = g,
-#                                layout = &quot;manual&quot;, node.positions = node_pos)</code></pre>
 <pre class="r"><code>ggraph(manual_layout) +
   geom_sf(data = states) +
   geom_node_point(size = .5, alpha = 0) +

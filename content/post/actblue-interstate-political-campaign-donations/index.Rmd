@@ -221,7 +221,7 @@ node_pos <- states %>%
 manual_layout <- create_layout(g,
                                layout = node_pos)
 ```
-```{r}
+```{r eval = FALSE, include = FALSE}
 # manual_layout <- create_layout(graph = g,
 #                                layout = "manual", node.positions = node_pos)
 
