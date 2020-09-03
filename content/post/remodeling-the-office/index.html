@@ -31,10 +31,6 @@ projects: []
 
 
 <p>The goal for this analysis is to determine which characters, directors, and writers from The Office most influence an episode’s IMDB rating. My hypothesis is that IMDB rating is largely driven by a few show personnel. I also briefly walk through the data cleaning and modeling processes. This analysis is based on code from Julia Silge’s <a href="https://juliasilge.com/blog/lasso-the-office/">Tidy Tuesdays</a> writeup She does a very good job of explaining the modeling aspects of this. She uses LASSO regression, which is very similar to the ridge regression I use.</p>
-<div id="tldr" class="section level3">
-<h3>TLDR</h3>
-<p>This is what my model thought was important. Keep reading to see the step-by-step.</p>
-<p><img src="/post/2020-06-19-the-office_files/the_office_vi.png" style="width:80.0%;height:80.0%" /></p>
 <p>The steps in the analysis are:</p>
 <ul>
 <li>organize the data
@@ -54,7 +50,6 @@ projects: []
 <li>was a given writer involved in the episode</li>
 <li>how many lines did each character have in the episode</li>
 </ul>
-</div>
 <div id="setup" class="section level3">
 <h3>Setup</h3>
 <pre class="r"><code>library(tidyverse)
