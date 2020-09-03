@@ -40,7 +40,7 @@ The goal for this analysis is to determine which characters, directors, and writ
 
 This is what my model thought was important. Keep reading to see the step-by-step.
 
-![](/post/2020-06-19-the-office_files/the_office_vi.png){width=80% height=80%}
+![](vi_graph.png){width=80% height=80%}
 
 The steps in the analysis are:
 
