@@ -35,6 +35,7 @@ knitr::opts_chunk$set(echo = TRUE,
 ```
 
 ##Setup
+
 These are the libraries and graph theme I will use:
 ```{r}
 library(tidyverse)
@@ -120,6 +121,7 @@ df %>%
 ```
 
 ##First attempt
+
 This is how the data looks when graphed as a typical network graph. The nodes (states) are not positioned geographically, which makes it difficult to understand. Aggregate donations less than $1,000,000 are excluded.
 ```{r}
 df_intermediate %>% 
@@ -138,6 +140,7 @@ df_intermediate %>%
 ```
 
 ##Mapping node positions to state geography
+
 This code turns the data into a network object and sets the minimum threshhold at $1 million
 ```{r}
 df_intermediate %>% 
@@ -191,6 +194,7 @@ p
 ```
 
 ##To and From
+
 This shows all the donations from California. Note the different scale of funds.
 ```{r echo=FALSE}
 g %>% 
