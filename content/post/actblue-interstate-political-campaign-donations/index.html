@@ -1,0 +1,214 @@
+---
+# Documentation: https://sourcethemes.com/academic/docs/managing-content/
+
+title: "Actblue Interstate Political Campaign Donations"
+subtitle: ""
+summary: ""
+authors: [Conor Tompkins]
+tags: [R, Politics]
+categories: [R, Politics]
+date: 2018-11-11
+lastmod: 2020-09-03
+featured: false
+draft: false
+
+# Featured image
+# To use, add an image named `featured.jpg/png` to your page's folder.
+# Focal points: Smart, Center, TopLeft, Top, TopRight, Left, Right, BottomLeft, Bottom, BottomRight.
+image:
+  caption: ""
+  focal_point: ""
+  preview_only: false
+
+# Projects (optional).
+#   Associate this post with one or more of your projects.
+#   Simply enter your project's folder or file name without extension.
+#   E.g. `projects = ["internal-project"]` references `content/project/deep-learning/index.md`.
+#   Otherwise, set `projects = []`.
+projects: []
+---
+
+
+
+<p>ActBlue is an online service that allows people to make donations to the political campaigns of Democractic candidates across the country. This post uses graph theory to analyze how political donations moved across states.</p>
+<p>##Setup
+These are the libraries and graph theme I will use:</p>
+<pre class="r"><code>library(tidyverse)
+library(maps)
+library(sf)
+library(rgeos)
+library(janitor)
+library(ggrepel)
+library(tidygraph)
+library(ggraph)
+
+theme_set(theme_graph())</code></pre>
+<p>This code pulls the boundary polygons for the 48 continental U.S. states and the District of Columbia.</p>
+<pre class="r"><code>states &lt;- st_as_sf(map(&quot;state&quot;, plot = FALSE, fill = TRUE))
+head(states)</code></pre>
+<pre><code>## Simple feature collection with 6 features and 1 field
+## geometry type:  MULTIPOLYGON
+## dimension:      XY
+## bbox:           xmin: -124.3834 ymin: 30.24071 xmax: -71.78015 ymax: 42.04937
+## geographic CRS: WGS 84
+##            ID                           geom
+## 1     alabama MULTIPOLYGON (((-87.46201 3...
+## 2     arizona MULTIPOLYGON (((-114.6374 3...
+## 3    arkansas MULTIPOLYGON (((-94.05103 3...
+## 4  california MULTIPOLYGON (((-120.006 42...
+## 5    colorado MULTIPOLYGON (((-102.0552 4...
+## 6 connecticut MULTIPOLYGON (((-73.49902 4...</code></pre>
+<p>This code finds the center of each state, which will act as the nodes for the network graph.</p>
+<pre class="r"><code>states &lt;- cbind(states, st_coordinates(st_centroid(states)))</code></pre>
+<p>I used <a href="https://www.infoplease.com/state-abbreviations-and-state-postal-codes">this website</a> to get the abbreviations for each state.</p>
+<pre class="r"><code>state_abbreviations &lt;- read_csv(&quot;https://raw.githubusercontent.com/conorotompkins/politics/master/data/state_abbreviations.csv&quot;) %&gt;% 
+  clean_names() %&gt;% 
+  mutate(state_district = tolower(state_district)) %&gt;% 
+  rename(abbr = postal_code) %&gt;% 
+  select(-abbreviation)
+
+states &lt;- states %&gt;% 
+  left_join(state_abbreviations, by = c(&quot;ID&quot; = &quot;state_district&quot;)) %&gt;% 
+  arrange(abbr)</code></pre>
+<p>This pulls the ActBlue data from the <a href="https://www.publicintegrity.org/">Center of Public Integrity GitHub repo</a>.</p>
+<pre class="r"><code>df &lt;- read_csv(&quot;https://raw.githubusercontent.com/PublicI/actblue-analysis/master/data/actblue_states.csv&quot;)</code></pre>
+<p>This joins the boundary data with the state abbreviations.</p>
+<pre class="r"><code>df %&gt;% 
+  semi_join(states, by = c(&quot;contributor_state&quot; = &quot;abbr&quot;)) %&gt;% 
+  semi_join(states, by = c(&quot;recipient_state&quot; = &quot;abbr&quot;)) -&gt; df
+
+df %&gt;% 
+  select(-c(X1, count, sum)) %&gt;% 
+  gather(state_type, state_name) %&gt;% 
+  distinct() %&gt;% 
+  group_by(state_type) %&gt;% 
+  summarize(n = n())</code></pre>
+<pre><code>## # A tibble: 2 x 2
+##   state_type            n
+##   &lt;chr&gt;             &lt;int&gt;
+## 1 contributor_state    49
+## 2 recipient_state      49</code></pre>
+<p>This code joins the boundary data with the ActBlue data and excludes donations to and from non-continental U.S. states/territories.</p>
+<pre class="r"><code>states %&gt;% 
+  semi_join(df, by = c(&quot;abbr&quot; = &quot;contributor_state&quot;)) %&gt;% 
+  semi_join(df, by = c(&quot;abbr&quot; = &quot;recipient_state&quot;))  -&gt; states</code></pre>
+<p>This plot shows that the boundary shapes and centroids are correct.</p>
+<pre class="r"><code>states %&gt;% 
+  ggplot() +
+  geom_sf() +
+  geom_point(aes(X, Y)) +
+  theme(panel.grid.major = element_line(colour = &#39;transparent&#39;))</code></pre>
+<p><img src="/post/actblue-interstate-political-campaign-donations/index_files/figure-html/unnamed-chunk-8-1.png" width="672" /></p>
+<p>This code cleans up the ActBlue data and removes intrastate donations.</p>
+<pre class="r"><code>df %&gt;%
+  select(-`X1`) %&gt;% 
+  arrange(contributor_state, recipient_state) %&gt;% 
+  mutate(sum = sum / 10^6,
+         sum = round(sum, digits = 2)) %&gt;% 
+  na.omit() %&gt;% 
+  filter(!(contributor_state == recipient_state)) -&gt; df_intermediate</code></pre>
+<p>##First attempt
+This is how the data looks when graphed as a typical network graph. The nodes (states) are not positioned geographically, which makes it difficult to understand. Aggregate donations less than $1,000,000 are excluded.</p>
+<pre class="r"><code>df_intermediate %&gt;% 
+  as_tbl_graph(directed = TRUE) %&gt;% 
+  activate(edges) %&gt;% 
+  filter(sum &gt;= 1) %&gt;% 
+  ggraph(layout =) +
+  geom_node_label(aes(label = name), size = 1, repel = FALSE) +
+  geom_edge_fan(aes(edge_width = sum, edge_alpha = sum),
+                arrow = arrow(length = unit(4, &#39;mm&#39;)), 
+                start_cap = circle(3, &#39;mm&#39;),
+                end_cap = circle(3, &#39;mm&#39;),
+                color = &quot;blue&quot;) +
+  scale_edge_width_continuous(&quot;Donations in millions USD&quot;, range = c(.3, 2)) +
+  scale_edge_alpha_continuous(&quot;Donations in millions USD&quot;, range = c(.1, 1))</code></pre>
+<p><img src="/post/actblue-interstate-political-campaign-donations/index_files/figure-html/unnamed-chunk-10-1.png" width="672" /></p>
+<p>##Mapping node positions to state geography
+This code turns the data into a network object and sets the minimum threshhold at $1 million</p>
+<pre class="r"><code>df_intermediate %&gt;% 
+  as_tbl_graph(directed = TRUE) -&gt; g
+
+threshhold &lt;- 1
+
+g %&gt;% 
+  activate(edges) %&gt;% 
+  filter(sum &gt;= 1) -&gt; g</code></pre>
+<p>This code creates the node positions for the network graph. The centroid of each state will be used as the node for that state.</p>
+<pre class="r"><code>node_pos &lt;- states %&gt;%
+  select(abbr, X, Y) %&gt;%
+  rename(x = X, y = Y) %&gt;%  # node positions must be called x, y
+  st_set_geometry(NULL)
+str(node_pos)</code></pre>
+<pre><code>## &#39;data.frame&#39;:    49 obs. of  3 variables:
+##  $ abbr: chr  &quot;AL&quot; &quot;AR&quot; &quot;AZ&quot; &quot;CA&quot; ...
+##  $ x   : num  -86.8 -92.4 -111.7 -119.6 -105.6 ...
+##  $ y   : num  32.8 34.9 34.3 37.3 39 ...</code></pre>
+<p>This code creates the node layout the graph will use and merges the network data with the layout.</p>
+<pre class="r"><code>manual_layout &lt;- create_layout(g, 
+                     #&#39;manual&#39;,
+                     layout = node_pos)</code></pre>
+<p>This is the final graph:</p>
+<pre class="r"><code>ggraph(manual_layout) +
+  geom_sf(data = states) +
+  geom_node_point(size = .5, alpha = 0) +
+  geom_edge_fan(aes(edge_width = sum, edge_alpha = sum),
+                arrow = arrow(length = unit(4, &#39;mm&#39;)), 
+                start_cap = circle(1, &#39;mm&#39;),
+                end_cap = circle(1, &#39;mm&#39;),
+                color = &quot;blue&quot;) +
+  scale_edge_width_continuous(&quot;Donations in millions USD&quot;, range = c(.3, 2)) +
+  scale_edge_alpha_continuous(&quot;Donations in millions USD&quot;, range = c(.1, 1)) +
+  labs(title = &quot;ActBlue Political Donations&quot;,
+       subtitle = str_c(&quot;Aggregate interstate donations greater than $&quot;, threshhold, &quot; million USD, 2017-01-01 to 2018-09-30&quot;),
+       caption = &quot;@conor_tompkins, data from Center for Public Integrity and 538&quot;) +
+  theme(panel.grid.major = element_line(colour = &#39;transparent&#39;)) -&gt; p
+
+p</code></pre>
+<p><img src="/post/actblue-interstate-political-campaign-donations/index_files/figure-html/unnamed-chunk-15-1.png" width="672" /></p>
+<p>##To and From
+This shows all the donations from California. Note the different scale of funds.</p>
+<pre class="r"><code># manual_layout &lt;- create_layout(graph = g,
+#                                layout = &quot;manual&quot;, node.positions = node_pos)</code></pre>
+<pre class="r"><code>ggraph(manual_layout) +
+  geom_sf(data = states) +
+  geom_node_point(size = .5, alpha = 0) +
+  geom_edge_fan(aes(edge_width = sum, edge_alpha = sum),
+                arrow = arrow(length = unit(4, &#39;mm&#39;)), 
+                start_cap = circle(1, &#39;mm&#39;),
+                end_cap = circle(1, &#39;mm&#39;),
+                color = &quot;blue&quot;) +
+  scale_edge_width_continuous(&quot;Donations in millions USD&quot;, range = c(.3, 2)) +
+  scale_edge_alpha_continuous(&quot;Donations in millions USD&quot;, range = c(.1, 1)) +
+  labs(title = &quot;ActBlue Political Donations&quot;,
+       subtitle = str_c(&quot;Aggregate interstate donations from &quot;, from_state, &quot;, 2017-01-01 to 2018-09-30&quot;),
+       caption = &quot;@conor_tompkins, data from Center for Public Integrity and 538&quot;) +
+  theme(panel.grid.major = element_line(colour = &#39;transparent&#39;)) -&gt; p_ca
+
+p_ca</code></pre>
+<p><img src="/post/actblue-interstate-political-campaign-donations/index_files/figure-html/unnamed-chunk-18-1.png" width="672" /></p>
+<p>This shows the donations to candidates in Texas. Note the different scale of funds.</p>
+<pre class="r"><code># manual_layout &lt;- create_layout(graph = g,
+#                                layout = &quot;manual&quot;, node.positions = node_pos)</code></pre>
+<pre class="r"><code>ggraph(manual_layout) +
+  geom_sf(data = states) +
+  geom_node_point(size = .5, alpha = 0) +
+  geom_edge_fan(aes(edge_width = sum, edge_alpha = sum),
+                arrow = arrow(length = unit(4, &#39;mm&#39;)), 
+                start_cap = circle(1, &#39;mm&#39;),
+                end_cap = circle(1, &#39;mm&#39;),
+                color = &quot;blue&quot;) +
+  scale_edge_width_continuous(&quot;Donations in millions USD&quot;, range = c(.3, 2)) +
+  scale_edge_alpha_continuous(&quot;Donations in millions USD&quot;, range = c(.1, 1)) +
+  labs(title = &quot;ActBlue Political Donations&quot;,
+       subtitle = str_c(&quot;Aggregate interstate donations to &quot;, to_state, &quot;, 2017-01-01 to 2018-09-30&quot;),
+       caption = &quot;@conor_tompkins, data from Center for Public Integrity and 538&quot;) +
+  theme(panel.grid.major = element_line(colour = &#39;transparent&#39;)) -&gt; p_tx
+
+p_tx</code></pre>
+<p><img src="/post/actblue-interstate-political-campaign-donations/index_files/figure-html/unnamed-chunk-21-1.png" width="672" /></p>
+<p>##References</p>
+<ul>
+<li><a href="https://github.com/PublicI/actblue-analysis" class="uri">https://github.com/PublicI/actblue-analysis</a></li>
+<li><a href="https://datascience.blog.wzb.eu/2018/05/31/three-ways-of-visualizing-a-graph-on-a-map/" class="uri">https://datascience.blog.wzb.eu/2018/05/31/three-ways-of-visualizing-a-graph-on-a-map/</a></li>
+<li><a href="https://lookatthhedata.netlify.com/2017-11-12-mapping-your-oyster-card-journeys-in-london-with-tidygraph-and-ggraph/" class="uri">https://lookatthhedata.netlify.com/2017-11-12-mapping-your-oyster-card-journeys-in-london-with-tidygraph-and-ggraph/</a></li>
+</ul>
