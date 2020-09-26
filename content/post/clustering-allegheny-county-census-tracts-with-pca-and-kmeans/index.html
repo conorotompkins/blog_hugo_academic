@@ -1,0 +1,352 @@
+---
+# Documentation: https://sourcethemes.com/academic/docs/managing-content/
+
+title: "Clustering Allegheny County Census Tracts With PCA and k-means"
+subtitle: ""
+summary: ""
+authors: [Conor Tompkins]
+tags: [R, Census, Allegheny County]
+categories: [R, Census, Allegheny County]
+date: 2018-09-08
+lastmod: 2020-09-26
+featured: false
+draft: false
+
+# Featured image
+# To use, add an image named `featured.jpg/png` to your page's folder.
+# Focal points: Smart, Center, TopLeft, Top, TopRight, Left, Right, BottomLeft, Bottom, BottomRight.
+image:
+  caption: ""
+  focal_point: ""
+  preview_only: false
+
+# Projects (optional).
+#   Associate this post with one or more of your projects.
+#   Simply enter your project's folder or file name without extension.
+#   E.g. `projects = ["internal-project"]` references `content/project/deep-learning/index.md`.
+#   Otherwise, set `projects = []`.
+projects: []
+---
+
+
+
+<p>In this post I will use the census API discussed in <a href="https://ctompkins.netlify.com/2018/08/06/exploring-allegheny-county-with-census-data/">the last post</a> to cluster the Allegheny County census tracts using PCA and k-means.</p>
+<div id="setup" class="section level2">
+<h2>Setup</h2>
+<pre class="r"><code>library(tidyverse)
+library(tidycensus)
+library(tigris)
+library(sf)
+library(broom)
+library(ggfortify)
+library(viridis)
+library(janitor)
+library(scales)
+library(ggthemes)
+
+options(tigris_use_cache = TRUE)
+
+theme_set(theme_minimal())</code></pre>
+<pre class="r"><code>census_vars &lt;- load_variables(2010, &quot;sf1&quot;, cache = TRUE)</code></pre>
+<p>Census tracts are small geographic areas analogous to local neighborhoods. This is a map of all the tracts in Allegheny County, for reference:
+<img src="/post/clustering-allegheny-county-census-tracts-with-pca-and-kmeans/index_files/figure-html/unnamed-chunk-3-1.png" width="672" /></p>
+</div>
+<div id="download-data" class="section level2">
+<h2>Download data</h2>
+<p>This code downloads data about the ethnicities resident in the tracts and calculates them as a % of the tract population.</p>
+<pre class="r"><code>vars_demo &lt;- c(white = &quot;P005003&quot;, 
+          black = &quot;P005004&quot;, 
+          asian = &quot;P005006&quot;, 
+          hispanic = &quot;P004003&quot;)
+#age vars men and women
+#P0120003:P0120049
+
+get_decennial(geography = &quot;tract&quot;, 
+              variables = vars_demo,
+              state = &quot;PA&quot;, 
+              county = &quot;Allegheny&quot;, 
+              year = 2010,
+              geometry = FALSE,
+              summary_var = &quot;P001001&quot;) %&gt;% 
+  arrange(GEOID) %&gt;% 
+  mutate(value = value / summary_value) %&gt;% 
+  select(-summary_value) %&gt;% 
+  spread(variable, value) %&gt;% 
+  rename_at(vars(&quot;white&quot;, &quot;black&quot;, &quot;asian&quot;, &quot;hispanic&quot;), funs(str_c(&quot;pct_&quot;, .))) -&gt; allegheny_demographics
+
+allegheny_demographics &lt;- replace(allegheny_demographics, is.na(allegheny_demographics), 0)</code></pre>
+<p>This code downloads information about the housing stock in each tract, specifically what % of housing units are owned outright, owned with a loan, or rented.</p>
+<pre class="r"><code>vars_housing &lt;- c(units_owned_loan = &quot;H011002&quot;,
+          units_owned_entire = &quot;H011003&quot;,
+          units_rented = &quot;H011004&quot;)
+
+get_decennial(geography = &quot;tract&quot;, 
+              variables = vars_housing,
+              state = &quot;PA&quot;, 
+              county = &quot;Allegheny&quot;, 
+              year = 2010,
+              geometry = FALSE,
+              summary_var = &quot;H011001&quot;) %&gt;% 
+  arrange(GEOID) %&gt;% 
+  mutate(value = value / summary_value) %&gt;% 
+  select(-summary_value) %&gt;% 
+  spread(variable, value) %&gt;% 
+  rename_at(vars(&quot;units_owned_entire&quot;, &quot;units_owned_loan&quot;, &quot;units_rented&quot;), funs(str_c(&quot;pct_&quot;, .))) -&gt; allegheny_housing
+
+allegheny_housing &lt;- replace(allegheny_housing, is.na(allegheny_housing), 0)</code></pre>
+<p>This code requests the total population of each tract.</p>
+<pre class="r"><code>#originally I used age-sex variables, but they were not useful
+vars_age_total &lt;- census_vars %&gt;% 
+  filter(name == &quot;P012001&quot;)
+
+get_decennial(geography = &quot;tract&quot;, 
+                           variables = vars_age_total$name,
+                           state = &quot;PA&quot;, 
+                           county = &quot;Allegheny&quot;, 
+                           geometry = FALSE,
+                           summary_var = &quot;P012001&quot;) %&gt;% 
+  rename(var_id = variable) %&gt;% 
+  mutate(value = value / summary_value) %&gt;% 
+  spread(var_id, value) -&gt; allegheny_age_sex
+
+colnames(allegheny_age_sex) &lt;- c(&quot;GEOID&quot;, &quot;NAME&quot;, &quot;summary_value&quot;, vars_age_total$label)
+
+allegheny_age_sex %&gt;% 
+  clean_names() %&gt;% 
+  rename(GEOID = geoid,
+         NAME = name,
+         total_population = summary_value) -&gt; allegheny_age_sex
+
+allegheny_age_sex &lt;- replace(allegheny_age_sex, is.na(allegheny_age_sex), 0)
+
+allegheny_age_sex %&gt;% 
+  select(GEOID, NAME, total_population) -&gt; allegheny_age_sex</code></pre>
+<p>This code requests the geometry of each tract that I will use to map them later.</p>
+<pre class="r"><code>get_decennial(geography = &quot;tract&quot;, 
+                           variables = vars_housing,
+                           state = &quot;PA&quot;, 
+                           county = &quot;Allegheny&quot;, 
+                           geometry = TRUE) %&gt;% 
+  select(-c(variable, value)) %&gt;% 
+  distinct(GEOID) -&gt; allegheny_geo</code></pre>
+<p>This joins the 4 dataframes together.</p>
+<pre class="r"><code>allegheny_geo %&gt;% 
+  left_join(allegheny_housing) %&gt;% 
+  left_join(allegheny_demographics) %&gt;% 
+  left_join(allegheny_age_sex) %&gt;% 
+  mutate(id = str_c(GEOID, NAME, sep = &quot; | &quot;)) -&gt; allegheny </code></pre>
+</div>
+<div id="exploratory-graph" class="section level2">
+<h2>Exploratory graph</h2>
+<p>This graph compares the percent of white residents to the remaining variables in the data. pct_white is on the x axis of each of the smaller charts. Note that each chart’s Y axis has its own scale. It is already obvious that pct_white and pct_black are negatively correlated with each other.</p>
+<pre class="r"><code>allegheny %&gt;%
+  st_set_geometry(NULL) %&gt;% 
+  select(contains(&quot;pct&quot;)) %&gt;% 
+  gather(variable, value, -pct_white) %&gt;% 
+  ggplot(aes(pct_white, value)) +
+  geom_point(alpha = .5) +
+  geom_smooth() +
+  facet_wrap(~variable, scales = &quot;free&quot;, nrow = 3, strip.position=&quot;left&quot;) +
+  scale_x_continuous(label = percent) +
+  scale_y_continuous(label = percent) +
+  labs(x = NULL) +
+  theme_bw() +
+  theme(strip.placement = &quot;outside&quot;)</code></pre>
+<p><img src="/post/clustering-allegheny-county-census-tracts-with-pca-and-kmeans/index_files/figure-html/unnamed-chunk-9-1.png" width="672" /></p>
+<p>This code plots the total population against the other variables:</p>
+<pre class="r"><code>allegheny %&gt;%
+  st_set_geometry(NULL) %&gt;% 
+  select(contains(&quot;pct&quot;), total_population) %&gt;% 
+  gather(variable, value, -total_population) %&gt;% 
+  ggplot(aes(total_population, value)) +
+  geom_point(alpha = .5) +
+  geom_smooth() +
+  facet_wrap(~variable, scales = &quot;free&quot;, nrow = 3, strip.position=&quot;left&quot;) +
+  scale_x_continuous(label = comma) +
+  scale_y_continuous(label = percent) +
+  theme_bw() +
+  theme(strip.placement = &quot;outside&quot;)</code></pre>
+<p><img src="/post/clustering-allegheny-county-census-tracts-with-pca-and-kmeans/index_files/figure-html/unnamed-chunk-10-1.png" width="672" /></p>
+</div>
+<div id="prepare-for-pca" class="section level2">
+<h2>Prepare for PCA</h2>
+<p>This code prepares the data for PCA:</p>
+<pre class="r"><code>allegheny %&gt;%
+  select(-c(id, GEOID, NAME)) %&gt;% 
+  st_drop_geometry() %&gt;% 
+  remove_rownames() -&gt; allegheny_pca
+
+allegheny_pca %&gt;% 
+  prcomp(scale = TRUE) -&gt; pc</code></pre>
+<pre class="r"><code>pc %&gt;% 
+  tidy(&quot;pcs&quot;)</code></pre>
+<pre><code>## # A tibble: 8 x 4
+##      PC std.dev percent cumulative
+##   &lt;dbl&gt;   &lt;dbl&gt;   &lt;dbl&gt;      &lt;dbl&gt;
+## 1     1  1.94   0.471        0.471
+## 2     2  1.28   0.205        0.676
+## 3     3  0.913  0.104        0.780
+## 4     4  0.789  0.0778       0.858
+## 5     5  0.769  0.0739       0.932
+## 6     6  0.658  0.0540       0.986
+## 7     7  0.323  0.0130       0.999
+## 8     8  0.0961 0.00115      1</code></pre>
+<pre class="r"><code>pc %&gt;% 
+  augment(data = allegheny_pca) %&gt;% 
+  as_tibble() %&gt;% 
+  mutate(GEOID = allegheny %&gt;% pull(GEOID)) %&gt;% 
+  select(.rownames, GEOID, everything()) -&gt; df_au</code></pre>
+<pre class="r"><code>df_au %&gt;% 
+  head()</code></pre>
+<pre><code>## # A tibble: 6 x 18
+##   .rownames GEOID pct_units_owned… pct_units_owned… pct_units_rented pct_asian
+##   &lt;chr&gt;     &lt;chr&gt;            &lt;dbl&gt;            &lt;dbl&gt;            &lt;dbl&gt;     &lt;dbl&gt;
+## 1 1         4200…            0.213            0.750           0.0366  0.0580  
+## 2 2         4200…            0.181            0.629           0.190   0.0749  
+## 3 3         4200…            0.245            0.685           0.0692  0.0352  
+## 4 4         4200…            0.336            0.501           0.164   0.000611
+## 5 5         4200…            0.147            0.418           0.435   0.000794
+## 6 6         4200…            0.168            0.432           0.400   0.0539  
+## # … with 12 more variables: pct_black &lt;dbl&gt;, pct_hispanic &lt;dbl&gt;,
+## #   pct_white &lt;dbl&gt;, total_population &lt;dbl&gt;, .fittedPC1 &lt;dbl&gt;,
+## #   .fittedPC2 &lt;dbl&gt;, .fittedPC3 &lt;dbl&gt;, .fittedPC4 &lt;dbl&gt;, .fittedPC5 &lt;dbl&gt;,
+## #   .fittedPC6 &lt;dbl&gt;, .fittedPC7 &lt;dbl&gt;, .fittedPC8 &lt;dbl&gt;</code></pre>
+<p>This shows how the PCs explain the variance in the data. As explained earlier, the first few PCs explain most of the variance in the data.</p>
+<pre class="r"><code>pc %&gt;% 
+  tidy(&quot;pcs&quot;) %&gt;%
+  select(-std.dev) %&gt;% 
+  gather(measure, value, -PC) %&gt;% 
+  mutate(measure = case_when(measure == &quot;percent&quot; ~ &quot;Percent&quot;,
+                             measure == &quot;cumulative&quot; ~ &quot;Cumulative&quot;)) %&gt;% 
+    ggplot(aes(PC, value)) +
+    geom_line() +
+    geom_point() +
+    facet_wrap(~measure) +
+    labs(title = &quot;Variance explained by each principal component&quot;,
+         x = &quot;Principal Component&quot;,
+         y = NULL) +
+    scale_x_continuous(breaks = 1:8) +
+    scale_y_continuous(label = percent) +
+  theme_bw()</code></pre>
+<p><img src="/post/clustering-allegheny-county-census-tracts-with-pca-and-kmeans/index_files/figure-html/unnamed-chunk-16-1.png" width="672" /></p>
+<p>This shows how the PCA function rearranged the data to maximize the variance in the first few PCs. PC1 is largely defined by the percent of a tract that is white or black, the percent of housing units that are owned, and the total population of the tract. The “pct_white” and “pct_black” arrows point in opposite directions, which reflects Pittsburgh’s <a href="http://suds-cmu.org/2017/02/21/the-legacies-of-redlining-in-pittsburgh/">status</a> as a <a href="http://www.duqsm.com/segregation-still-a-problem-in-pittsburgh/">segregated</a> <a href="https://triblive.com/news/allegheny/9807345-74/schools-students-pittsburgh">city</a>.</p>
+<p>PC2 explains less of the variance, and is influenced by the percent of a tract that is hispanic, asian, or black.</p>
+<pre class="r"><code>allegheny %&gt;% 
+  select(-c(id, GEOID)) %&gt;% 
+  st_set_geometry(NULL) %&gt;% 
+  nest() %&gt;% 
+  mutate(pca = map(data, ~ prcomp(.x %&gt;% select(-NAME), 
+                                  center = TRUE, scale = TRUE)),
+         pca_aug = map2(pca, data, ~augment(.x, data = .y))) -&gt; allegheny_pca2
+
+allegheny_pca2 %&gt;% 
+mutate(
+    pca_graph = map2(
+      .x = pca,
+      .y = data,
+      ~ autoplot(.x, loadings = TRUE, loadings.label = TRUE,
+                 loadings.label.repel = TRUE,
+                 data = .y) +
+        theme_bw() +
+        labs(x = &quot;Principal Component 1&quot;,
+             y = &quot;Principal Component 2&quot;,
+             title = &quot;First two principal components of PCA on Allegheny County Census data&quot;)
+    )
+  ) %&gt;%
+  pull(pca_graph)</code></pre>
+<pre><code>## [[1]]</code></pre>
+<p><img src="/post/clustering-allegheny-county-census-tracts-with-pca-and-kmeans/index_files/figure-html/unnamed-chunk-17-1.png" width="672" /></p>
+<p>This code maps the first two PCs to the tracts.</p>
+<pre class="r"><code>df_au %&gt;% 
+  select(-.rownames) %&gt;% 
+  gather(variable, value, -c(GEOID)) -&gt; df_au_long
+
+allegheny_geo %&gt;% 
+  left_join(df_au) %&gt;% 
+  gather(pc, pc_value, contains(&quot;.fitted&quot;)) %&gt;% 
+  mutate(pc = str_replace(pc, &quot;.fitted&quot;, &quot;&quot;)) -&gt; allegheny_pca_map
+
+allegheny_pca_map %&gt;% 
+  filter(pc %in% c(&quot;PC1&quot;, &quot;PC2&quot;)) %&gt;% 
+  ggplot(aes(fill = pc_value, color = pc_value)) + 
+  geom_sf() + 
+  facet_wrap(~pc) +
+  coord_sf(crs = 26911) + 
+  scale_fill_viridis(&quot;Principal component value&quot;, option = &quot;magma&quot;) + 
+  scale_color_viridis(&quot;Principal component value&quot;, option = &quot;magma&quot;) +
+  labs(title = &quot;Allegheny County&quot;,
+       subtitle = &quot;American Community Survey&quot;) +
+  theme(axis.text = element_blank())</code></pre>
+<p><img src="/post/clustering-allegheny-county-census-tracts-with-pca-and-kmeans/index_files/figure-html/unnamed-chunk-18-1.png" width="672" /></p>
+</div>
+<div id="clustering-with-k-means" class="section level2">
+<h2>Clustering with k-means</h2>
+<p>Next I will use k-means to cluster the PC data.</p>
+<pre class="r"><code>df_au_long %&gt;% 
+  filter(str_detect(variable, &quot;PC&quot;)) %&gt;% 
+  spread(variable, value) -&gt; allegheny_kmeans</code></pre>
+<p>This code clusters the data using 1 to 9 clusters.</p>
+<pre class="r"><code>kclusts &lt;- tibble(k = 1:9) %&gt;%
+  mutate(
+    kclust = map(k, ~kmeans(allegheny_kmeans, .x)),
+    tidied = map(kclust, tidy),
+    glanced = map(kclust, glance),
+    augmented = map(kclust, augment, allegheny_kmeans)
+  )</code></pre>
+<pre class="r"><code>clusters &lt;- kclusts %&gt;%
+  unnest(tidied)
+
+assignments &lt;- kclusts %&gt;% 
+  unnest(augmented)
+
+clusterings &lt;- kclusts %&gt;%
+  unnest(glanced, .drop = TRUE)</code></pre>
+<p>Based on this “elbow chart”, the optimum number of clusters is most likely 2.</p>
+<pre class="r"><code>ggplot(clusterings, aes(k, tot.withinss)) +
+  geom_line() +
+  geom_point() +
+  geom_vline(xintercept = 2, linetype = 2) +
+  scale_x_continuous(breaks = 1:9) +
+  labs(x = &quot;Number of clusters&quot;,
+       y = &quot;Between-cluster sum of squares&quot;)</code></pre>
+<p><img src="/post/clustering-allegheny-county-census-tracts-with-pca-and-kmeans/index_files/figure-html/unnamed-chunk-22-1.png" width="672" /></p>
+<p>We can visualize how the data would look if it were assigned to a different number of clusters. Clearly the clustering algorithm experiences diminishing returns after 2 or 3 clusters.</p>
+<pre class="r"><code>ggplot(assignments, aes(.fittedPC1, .fittedPC2)) +
+  geom_point(aes(color = .cluster), alpha = .7) + 
+  facet_wrap(~ str_c(k, &quot; cluster(s)&quot;)) +
+  scale_color_discrete(&quot;Cluster&quot;) +
+  labs(x = &quot;PC1&quot;,
+       y = &quot;PC2&quot;) +
+  theme_bw()</code></pre>
+<p><img src="/post/clustering-allegheny-county-census-tracts-with-pca-and-kmeans/index_files/figure-html/unnamed-chunk-23-1.png" width="672" /></p>
+<p>This code divides the data into 2 clusters and maps the clusters onto the tract map.</p>
+<pre class="r"><code>df_au_long %&gt;% 
+  filter(str_detect(variable, &quot;PC&quot;)) %&gt;% 
+  spread(variable, value) -&gt; allegheny_kmeans
+
+kclust &lt;- kmeans(allegheny_kmeans, centers = 2)
+
+kclust %&gt;% 
+  augment(df_au_long %&gt;% 
+    filter(str_detect(variable, &quot;.fitted&quot;)) %&gt;% 
+    spread(variable, value)) -&gt; allegheny_kmeans
+
+get_decennial(geography = &quot;tract&quot;, 
+                           variables = vars_housing,
+                           state = &quot;PA&quot;, 
+                           county = &quot;Allegheny&quot;, 
+                           geometry = TRUE) %&gt;% 
+  select(-c(variable, value)) %&gt;% 
+  distinct(GEOID) -&gt; allegheny_geo
+
+allegheny_geo %&gt;% 
+  left_join(allegheny_kmeans) -&gt; allegheny</code></pre>
+<pre class="r"><code>allegheny %&gt;% 
+  ggplot(aes(fill = .cluster, color = .cluster)) +
+  geom_sf(color = &quot;grey&quot;, size = .1) +
+  scale_fill_viridis(&quot;Cluster&quot;, discrete = TRUE, direction = -1) + 
+  scale_color_viridis(&quot;Cluster&quot;, discrete = TRUE, direction = -1) +
+  theme(axis.text = element_blank())</code></pre>
+<p><img src="/post/clustering-allegheny-county-census-tracts-with-pca-and-kmeans/index_files/figure-html/unnamed-chunk-25-1.png" width="672" /></p>
+<p>The second cluster largely follows the city limits, but excludes areas such as Mount Washington, Squirrel Hill, and Shadyside. It also includes a few areas outside of the city like Duquesne and McKeesport.</p>
+</div>

@@ -1,7 +1,7 @@
 ---
 # Documentation: https://sourcethemes.com/academic/docs/managing-content/
 
-title: "Premier League 538 Spi Ratings"
+title: "Premier League 538 SPI Ratings"
 subtitle: ""
 summary: ""
 authors: [Conor Tompkins]

@@ -1,0 +1,239 @@
+---
+# Documentation: https://sourcethemes.com/academic/docs/managing-content/
+
+title: "Exploring Allegheny County With Census Data"
+subtitle: ""
+summary: ""
+authors: [Conor Tompkins]
+tags: [R, Census, Allegheny County]
+categories: [R, Census, Allegheny County]
+date: 2018-08-06
+lastmod: 2020-09-26
+featured: false
+draft: false
+
+# Featured image
+# To use, add an image named `featured.jpg/png` to your page's folder.
+# Focal points: Smart, Center, TopLeft, Top, TopRight, Left, Right, BottomLeft, Bottom, BottomRight.
+image:
+  caption: ""
+  focal_point: ""
+  preview_only: false
+
+# Projects (optional).
+#   Associate this post with one or more of your projects.
+#   Simply enter your project's folder or file name without extension.
+#   E.g. `projects = ["internal-project"]` references `content/project/deep-learning/index.md`.
+#   Otherwise, set `projects = []`.
+projects: []
+---
+
+
+
+<p>This post explores Allegheny County and Pennsylvania through census data. I use the tidycensus and sf packages to collect data from the census API and draw maps with the data.</p>
+<div id="setup" class="section level2">
+<h2>Setup</h2>
+<pre class="r"><code>library(tidyverse)
+library(tidycensus)
+library(tigris)
+library(sf)
+library(broom)
+library(ggfortify)
+library(viridis)
+library(scales)
+library(janitor)
+
+options(tigris_use_cache = TRUE)
+
+theme_set(theme_bw())
+
+census_vars &lt;- load_variables(2010, &quot;sf1&quot;, cache = TRUE)</code></pre>
+</div>
+<div id="collect-data" class="section level2">
+<h2>Collect data</h2>
+<p>tidycensus provides a wrapper for the U.S. Census API. You can request a wide variety of data, from economic measures to information about demography. The API also includes data about geographic regions.</p>
+<p>This code creates a dataframe of some of the variables available through the census API.</p>
+<pre class="r"><code>vars &lt;- load_variables(2016, &quot;acs5&quot;, cache = TRUE)
+
+vars</code></pre>
+<pre><code>## # A tibble: 22,815 x 3
+##    name       label                           concept                           
+##    &lt;chr&gt;      &lt;chr&gt;                           &lt;chr&gt;                             
+##  1 B00001_001 Estimate!!Total                 UNWEIGHTED SAMPLE COUNT OF THE PO…
+##  2 B00002_001 Estimate!!Total                 UNWEIGHTED SAMPLE HOUSING UNITS   
+##  3 B01001_001 Estimate!!Total                 SEX BY AGE                        
+##  4 B01001_002 Estimate!!Total!!Male           SEX BY AGE                        
+##  5 B01001_003 Estimate!!Total!!Male!!Under 5… SEX BY AGE                        
+##  6 B01001_004 Estimate!!Total!!Male!!5 to 9 … SEX BY AGE                        
+##  7 B01001_005 Estimate!!Total!!Male!!10 to 1… SEX BY AGE                        
+##  8 B01001_006 Estimate!!Total!!Male!!15 to 1… SEX BY AGE                        
+##  9 B01001_007 Estimate!!Total!!Male!!18 and … SEX BY AGE                        
+## 10 B01001_008 Estimate!!Total!!Male!!20 years SEX BY AGE                        
+## # … with 22,805 more rows</code></pre>
+<p>This code requests information about the median income of census tracts in Allegheny County. The “geography” argument sets the level of geographic granularity.</p>
+<pre class="r"><code>allegheny &lt;- get_acs(state = &quot;PA&quot;, 
+                     county = &quot;Allegheny County&quot;, 
+                     geography = &quot;tract&quot;, 
+                     variables = c(median_income = &quot;B19013_001&quot;), 
+                     geometry = TRUE,
+                     cb = FALSE)
+
+head(allegheny)</code></pre>
+<pre><code>## Simple feature collection with 6 features and 5 fields
+## geometry type:  MULTIPOLYGON
+## dimension:      XY
+## bbox:           xmin: -80.16148 ymin: 40.41478 xmax: -79.88377 ymax: 40.57546
+## geographic CRS: NAD83
+##         GEOID                                              NAME      variable
+## 1 42003563200 Census Tract 5632, Allegheny County, Pennsylvania median_income
+## 2 42003980000 Census Tract 9800, Allegheny County, Pennsylvania median_income
+## 3 42003564100 Census Tract 5641, Allegheny County, Pennsylvania median_income
+## 4 42003461000 Census Tract 4610, Allegheny County, Pennsylvania median_income
+## 5 42003437000 Census Tract 4370, Allegheny County, Pennsylvania median_income
+## 6 42003981800 Census Tract 9818, Allegheny County, Pennsylvania median_income
+##   estimate   moe                       geometry
+## 1    29750  8141 MULTIPOLYGON (((-80.00469 4...
+## 2       NA    NA MULTIPOLYGON (((-79.90168 4...
+## 3   145179 11268 MULTIPOLYGON (((-80.09943 4...
+## 4    39063  6923 MULTIPOLYGON (((-80.16148 4...
+## 5   106250 11871 MULTIPOLYGON (((-80.12246 4...
+## 6       NA    NA MULTIPOLYGON (((-79.90822 4...</code></pre>
+<p>This code maps the data onto the census tracts. The st_erase function makes the rivers show up on the map (not working).</p>
+<pre class="r"><code># st_erase &lt;- function(x, y) {
+#   st_difference(x, st_union(st_combine(y)))
+# }
+
+#allegheny_water &lt;- area_water(&quot;PA&quot;, &quot;Allegheny&quot;, class = &quot;sf&quot;)
+
+#allegheny_erase &lt;- st_erase(allegheny, allegheny_water)
+
+allegheny %&gt;%
+  ggplot(aes(fill = estimate, color = estimate)) + 
+  geom_sf() + 
+  scale_fill_viridis(&quot;Median household income&quot;, option = &quot;magma&quot;, labels = comma) +
+  scale_color_viridis(&quot;Median household income&quot;, option = &quot;magma&quot;, labels = comma) +
+  labs(title = &quot;Allegheny County&quot;,
+       subtitle = &quot;American Community Survey&quot;) +
+  theme(axis.text = element_blank())</code></pre>
+<p><img src="/post/exploring-allegheny-county-with-census-data/index_files/figure-html/unnamed-chunk-4-1.png" width="672" /></p>
+<p>This code requests information about the ethnicities within each census tract. Then, it calculates the percentage of the entire population of a tract that each ethnicity makes up.</p>
+<pre class="r"><code>racevars &lt;- c(White = &quot;P005003&quot;, 
+              Black = &quot;P005004&quot;, 
+              Asian = &quot;P005006&quot;, 
+              Hispanic = &quot;P004003&quot;)
+
+get_decennial(geography = &quot;tract&quot;, 
+                                variables = racevars,
+                                state = &quot;PA&quot;, 
+                                county = &quot;Allegheny&quot;, 
+                                geometry = TRUE,
+                                summary_var = &quot;P001001&quot;) %&gt;% 
+    mutate(value = value / summary_value,
+           variable = str_c(&quot;percent_&quot;, tolower(variable))) -&gt; allegheny_race
+
+head(allegheny_race)</code></pre>
+<pre><code>## Simple feature collection with 6 features and 5 fields
+## geometry type:  MULTIPOLYGON
+## dimension:      XY
+## bbox:           xmin: -80.12431 ymin: 40.54225 xmax: -79.99058 ymax: 40.61431
+## geographic CRS: NAD83
+## # A tibble: 6 x 6
+##   GEOID  NAME       variable   value summary_value                      geometry
+##   &lt;chr&gt;  &lt;chr&gt;      &lt;chr&gt;      &lt;dbl&gt;         &lt;dbl&gt;            &lt;MULTIPOLYGON [°]&gt;
+## 1 42003… Census Tr… percent… 0.916            4865 (((-80.07936 40.58043, -80.0…
+## 2 42003… Census Tr… percent… 0.00843          4865 (((-80.07936 40.58043, -80.0…
+## 3 42003… Census Tr… percent… 0.0580           4865 (((-80.07936 40.58043, -80.0…
+## 4 42003… Census Tr… percent… 0.0103           4865 (((-80.07936 40.58043, -80.0…
+## 5 42003… Census Tr… percent… 0.878            6609 (((-80.06788 40.60846, -80.0…
+## 6 42003… Census Tr… percent… 0.0172           6609 (((-80.06788 40.60846, -80.0…</code></pre>
+<p>This code maps that data. The facet_wrap function creates a map for each ethnicity.</p>
+<pre class="r"><code>#allegheny_race &lt;- st_erase(allegheny_race, allegheny_water)
+
+allegheny_race %&gt;%
+  ggplot(aes(fill = value, color = value)) +
+  facet_wrap(~variable) +
+  geom_sf() +
+  scale_fill_viridis(&quot;Percent&quot;, option = &quot;magma&quot;, labels = percent) +
+  scale_color_viridis(&quot;Percent&quot;, option = &quot;magma&quot;, labels = percent) +
+  theme(axis.text = element_blank())</code></pre>
+<p><img src="/post/exploring-allegheny-county-with-census-data/index_files/figure-html/unnamed-chunk-6-1.png" width="672" /></p>
+<p>You can also request data for an entire state. This code requests the median income for each census tract in Pennsylvania.</p>
+<pre class="r"><code>pa &lt;- get_acs(state = &quot;PA&quot;,
+                     geography = &quot;tract&quot;, 
+                     variables = c(median_income = &quot;B19013_001&quot;), 
+                     geometry = TRUE)
+
+head(pa)</code></pre>
+<pre><code>## Simple feature collection with 6 features and 5 fields
+## geometry type:  MULTIPOLYGON
+## dimension:      XY
+## bbox:           xmin: -80.14905 ymin: 40.32178 xmax: -75.6175 ymax: 41.07083
+## geographic CRS: NAD83
+##         GEOID                                           NAME      variable
+## 1 42019910500 Census Tract 9105, Butler County, Pennsylvania median_income
+## 2 42019912200 Census Tract 9122, Butler County, Pennsylvania median_income
+## 3 42021000100   Census Tract 1, Cambria County, Pennsylvania median_income
+## 4 42021012600 Census Tract 126, Cambria County, Pennsylvania median_income
+## 5 42025020700  Census Tract 207, Carbon County, Pennsylvania median_income
+## 6 42027010800  Census Tract 108, Centre County, Pennsylvania median_income
+##   estimate   moe                       geometry
+## 1       NA    NA MULTIPOLYGON (((-80.04897 4...
+## 2    93446 11356 MULTIPOLYGON (((-80.14905 4...
+## 3    12907  1274 MULTIPOLYGON (((-78.92583 4...
+## 4    47143  9880 MULTIPOLYGON (((-78.73584 4...
+## 5    57939  4427 MULTIPOLYGON (((-75.71378 4...
+## 6    53569  4123 MULTIPOLYGON (((-77.55509 4...</code></pre>
+<pre class="r"><code>pa %&gt;%
+  ggplot(aes(fill = estimate, color = estimate)) + 
+  geom_sf() + 
+  scale_fill_viridis(&quot;Estimated median income&quot;, option = &quot;magma&quot;, label = comma) + 
+  scale_color_viridis(&quot;Estimated median income&quot;, option = &quot;magma&quot;, label = comma) +
+  theme(axis.text = element_blank())</code></pre>
+<p><img src="/post/exploring-allegheny-county-with-census-data/index_files/figure-html/unnamed-chunk-8-1.png" width="672" /></p>
+<p>This code requests ethnicity data for each tract in Pennsylvania.</p>
+<pre class="r"><code>racevars &lt;- c(White = &quot;P005003&quot;, 
+              Black = &quot;P005004&quot;, 
+              Asian = &quot;P005006&quot;, 
+              Hispanic = &quot;P004003&quot;)
+
+get_decennial(geography = &quot;tract&quot;, 
+                                variables = racevars,
+                                state = &quot;PA&quot;, 
+                                geometry = TRUE,
+                                summary_var = &quot;P001001&quot;) %&gt;% 
+  mutate(value = value / summary_value,
+         variable = str_c(&quot;percent_&quot;, tolower(variable))) -&gt; pa_race
+
+head(pa_race)</code></pre>
+<pre><code>## Simple feature collection with 6 features and 5 fields
+## geometry type:  MULTIPOLYGON
+## dimension:      XY
+## bbox:           xmin: -80.12431 ymin: 40.54225 xmax: -79.99058 ymax: 40.61431
+## geographic CRS: NAD83
+## # A tibble: 6 x 6
+##   GEOID  NAME       variable   value summary_value                      geometry
+##   &lt;chr&gt;  &lt;chr&gt;      &lt;chr&gt;      &lt;dbl&gt;         &lt;dbl&gt;            &lt;MULTIPOLYGON [°]&gt;
+## 1 42003… Census Tr… percent… 0.916            4865 (((-80.07936 40.58043, -80.0…
+## 2 42003… Census Tr… percent… 0.00843          4865 (((-80.07936 40.58043, -80.0…
+## 3 42003… Census Tr… percent… 0.0580           4865 (((-80.07936 40.58043, -80.0…
+## 4 42003… Census Tr… percent… 0.0103           4865 (((-80.07936 40.58043, -80.0…
+## 5 42003… Census Tr… percent… 0.878            6609 (((-80.06788 40.60846, -80.0…
+## 6 42003… Census Tr… percent… 0.0172           6609 (((-80.06788 40.60846, -80.0…</code></pre>
+<pre class="r"><code>pa_race %&gt;%
+  ggplot(aes(fill = value, color = value)) +
+  facet_wrap(~variable) +
+  geom_sf() +
+  labs(title = &quot;Major ethncities in Pennsylvania&quot;,
+       subtitle = &quot;Census data&quot;) +
+  scale_fill_viridis(&quot;Percent&quot;, option = &quot;magma&quot;, label = percent) +
+  scale_color_viridis(&quot;Percent&quot;, option = &quot;magma&quot;, label = percent) +
+  theme(axis.text = element_blank())</code></pre>
+<p><img src="/post/exploring-allegheny-county-with-census-data/index_files/figure-html/unnamed-chunk-10-1.png" width="672" /></p>
+<p>Resources used:</p>
+<ul>
+<li><a href="http://strimas.com/r/tidy-sf/" class="uri">http://strimas.com/r/tidy-sf/</a></li>
+<li><a href="https://walkerke.github.io/tidycensus/articles/spatial-data.html" class="uri">https://walkerke.github.io/tidycensus/articles/spatial-data.html</a></li>
+<li><a href="https://walkerke.github.io/tidycensus/index.html" class="uri">https://walkerke.github.io/tidycensus/index.html</a></li>
+<li><a href="https://walkerke.github.io/2017/06/comparing-metros/" class="uri">https://walkerke.github.io/2017/06/comparing-metros/</a></li>
+</ul>
+</div>

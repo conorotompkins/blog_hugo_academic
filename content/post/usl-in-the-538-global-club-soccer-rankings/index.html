@@ -1,0 +1,103 @@
+---
+# Documentation: https://sourcethemes.com/academic/docs/managing-content/
+
+title: "USL in the 538 Global Club Soccer Rankings"
+subtitle: ""
+summary: ""
+authors: [Conor Tompkins]
+tags: [R, USL, Riverhounds]
+categories: [R, USL, Riverhounds]
+date: 2018-08-14
+lastmod: 2020-09-26
+featured: false
+draft: false
+
+# Featured image
+# To use, add an image named `featured.jpg/png` to your page's folder.
+# Focal points: Smart, Center, TopLeft, Top, TopRight, Left, Right, BottomLeft, Bottom, BottomRight.
+image:
+  caption: ""
+  focal_point: ""
+  preview_only: false
+
+# Projects (optional).
+#   Associate this post with one or more of your projects.
+#   Simply enter your project's folder or file name without extension.
+#   E.g. `projects = ["internal-project"]` references `content/project/deep-learning/index.md`.
+#   Otherwise, set `projects = []`.
+projects: []
+---
+
+
+
+<p><em>This post was originally run with data from August 2018. 538 does not provide historical rankings, so I had to rerun the code with September 2020 data when I migrated my blog.</em></p>
+<p>538 recently added the United Soccer League to their <a href="https://projects.fivethirtyeight.com/global-club-soccer-rankings/">Soccer Power Index ratings</a>. I’m a Riverhounds fan, so I wanted to see how the team compared to teams from leagues around the world.</p>
+<pre class="r"><code>library(tidyverse)
+library(ggrepel)
+
+theme_set(theme_bw())</code></pre>
+<pre class="r"><code>df &lt;- read_csv(&quot;https://projects.fivethirtyeight.com/soccer-api/club/spi_global_rankings.csv&quot;, progress = FALSE) %&gt;% 
+  group_by(league) %&gt;% 
+  mutate(league_spi = median(spi)) %&gt;% 
+  ungroup() %&gt;% 
+  mutate(league = fct_reorder(league, league_spi))
+
+df</code></pre>
+<pre><code>## # A tibble: 633 x 8
+##     rank prev_rank name           league              off   def   spi league_spi
+##    &lt;dbl&gt;     &lt;dbl&gt; &lt;chr&gt;          &lt;fct&gt;             &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;      &lt;dbl&gt;
+##  1     1         1 Bayern Munich  German Bundesliga  3.42 0.27   95.3       66.4
+##  2     2         2 Manchester Ci… Barclays Premier…  3.09 0.24   94.2       71.2
+##  3     3         3 Liverpool      Barclays Premier…  2.84 0.33   91.4       71.2
+##  4     4         4 Barcelona      Spanish Primera …  2.88 0.43   90.1       70.2
+##  5     5         5 Real Madrid    Spanish Primera …  2.52 0.32   89.2       70.2
+##  6     6         6 Paris Saint-G… French Ligue 1     2.89 0.51   89.0       58.8
+##  7     7         8 Atletico Madr… Spanish Primera …  2.28 0.35   86.3       70.2
+##  8     8        10 Internazionale Italy Serie A      2.51 0.570  84.3       60.8
+##  9     9         9 Chelsea        Barclays Premier…  2.44 0.54   84.2       71.2
+## 10    10        12 RB Leipzig     German Bundesliga  2.45 0.55   84.1       66.4
+## # … with 623 more rows</code></pre>
+<pre class="r"><code>df %&gt;% 
+  ggplot(aes(spi, league)) +
+  geom_jitter(aes(color = league), show.legend = FALSE,
+              height = .2,
+              alpha = .7) +
+  geom_jitter(data = df %&gt;% filter(name == &quot;Pittsburgh Riverhounds&quot;),
+              show.legend = FALSE,
+              height = .2,
+              alpha = .7) +
+  geom_label_repel(data = df %&gt;% filter(name == &quot;Pittsburgh Riverhounds&quot;), 
+                   aes(label = name), 
+                   size = 3,
+                   show.legend = FALSE,
+                   force = 6) +
+  labs(title = &quot;538 Soccer Power Index&quot;,
+       subtitle = &quot;One dot = one team&quot;,
+       y = NULL,
+       x = &quot;Soccer Power Index&quot;,
+       caption = &quot;538 data, @conor_tompkins&quot;)</code></pre>
+<p><img src="/post/usl-in-the-538-global-club-soccer-rankings/index_files/figure-html/unnamed-chunk-3-1.png" width="768" /></p>
+<pre class="r"><code>df %&gt;% 
+  ggplot(aes(spi, league)) +
+  geom_jitter(aes(color = league), show.legend = FALSE,
+              height = .2,
+              alpha = .7) +
+  labs(title = &quot;538 Soccer Power Index&quot;,
+       subtitle = &quot;One dot = one team&quot;,
+       y = NULL,
+       x = &quot;Soccer Power Index&quot;,
+       caption = &quot;538 data, @conor_tompkins&quot;)</code></pre>
+<p><img src="/post/usl-in-the-538-global-club-soccer-rankings/index_files/figure-html/unnamed-chunk-4-1.png" width="768" /></p>
+<p>This shows the offensive and defensive ratings of each USL team. The Riverhounds are squarely in the #LilleyBall quadrant.</p>
+<pre class="r"><code>df %&gt;% 
+  filter(league == &quot;United Soccer League&quot;) %&gt;% 
+  ggplot(aes(off, def, label = name)) +
+  geom_point() +
+  geom_label_repel(size = 4,
+                   force = 4) +
+  scale_y_reverse() +
+  labs(title = &quot;538 Soccer Power Index&quot;,
+       y = &quot;Defensive rating (scale reversed)&quot;,
+       x = &quot;Offensive rating&quot;,
+       caption = &quot;538 data, @conor_tompkins&quot;)</code></pre>
+<p><img src="/post/usl-in-the-538-global-club-soccer-rankings/index_files/figure-html/unnamed-chunk-5-1.png" width="1152" /></p>
