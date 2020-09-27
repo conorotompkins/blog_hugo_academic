@@ -1,0 +1,733 @@
+---
+# Documentation: https://sourcethemes.com/academic/docs/managing-content/
+
+title: "Comparing U S Senators Casey and Toomey"
+subtitle: ""
+summary: ""
+authors: [Conor Tompkins]
+tags: [Politics, Pennsylvania]
+categories: []
+date: 2018-03-12
+lastmod: 2020-09-27T17:45:10-04:00
+featured: false
+draft: false
+
+# Featured image
+# To use, add an image named `featured.jpg/png` to your page's folder.
+# Focal points: Smart, Center, TopLeft, Top, TopRight, Left, Right, BottomLeft, Bottom, BottomRight.
+image:
+  caption: ""
+  focal_point: ""
+  preview_only: false
+
+# Projects (optional).
+#   Associate this post with one or more of your projects.
+#   Simply enter your project's folder or file name without extension.
+#   E.g. `projects = ["internal-project"]` references `content/project/deep-learning/index.md`.
+#   Otherwise, set `projects = []`.
+projects: []
+---
+
+<script src="/rmarkdown-libs/kePrint/kePrint.js"></script>
+<link href="/rmarkdown-libs/lightable/lightable.css" rel="stylesheet" />
+
+
+<p>As a follow-up to my post about how <a href="http://ctompkins.netlify.com/2018/03/08/mayor-billpeduto-tweets/">Pittsburgh Mayor Bill Peduto uses Twitter</a>, I thought it would be useful to examine and compare how Pennsylvania’s U.S. senators use Twitter. I will use some of the same methods, in addition to some comparative methods. In this analysis, I exclude retweets and quote tweets.</p>
+<p>This code loads the libraries requires for the analysis, and sets some prefences for plotting.</p>
+<pre class="r"><code>library(tidyverse)
+library(tidytext)
+library(lubridate)
+library(rtweet)
+library(scales)
+library(knitr)
+library(kableExtra)
+
+set.seed(1234)
+theme_set(theme_bw(base_size = 18))
+
+title &lt;- &quot;@SenBobCasey and @SenToomey tweets&quot;
+caption &lt;- &quot;@conor_tompkins&quot;</code></pre>
+<p>This code uses the rtweet package to download the senator’s tweets via the Twitter API:</p>
+<pre class="r"><code>df_casey &lt;- get_timelines(&quot;SenBobCasey&quot;, n = 3200) %&gt;% 
+  mutate(senator = &quot;Casey&quot;)
+
+df_toomey &lt;- get_timelines(&quot;SenToomey&quot;, n = 3200) %&gt;% 
+  mutate(senator = &quot;Toomey&quot;)</code></pre>
+<p>I have already pulled the data from Twitter, so this code downloads the tweet data from my <a href="https://github.com/conorotompkins/pittsburgh_twitter">GitHub repo</a>.</p>
+<pre class="r"><code>source(&quot;https://raw.githubusercontent.com/conorotompkins/pittsburgh_twitter/master/scripts/tidytext_functions.R&quot;)
+
+df_casey &lt;- read_csv(&quot;https://raw.githubusercontent.com/conorotompkins/pittsburgh_twitter/master/data/tweets_casey.tweets.csv&quot;)
+
+df_toomey &lt;- read_csv(&quot;https://raw.githubusercontent.com/conorotompkins/pittsburgh_twitter/master/data/tweets_toomey.tweets.csv&quot;)</code></pre>
+<div id="bigram-analysis" class="section level2">
+<h2>Bigram analysis</h2>
+<p>Bigrams are two-word chunks pulled from text. For example, “Senator Casey”, “Casey is”, “is from”, and “from Pennsylvania” are all bigrams of the sentence “Senator Casey is from Pennsylania”. This code extracts the bigrams from Senator Casey’s tweets and counts how many times they occur. It also removes some artifacts of URLs and other Twitter metadata that are not relevant.</p>
+<pre class="r"><code>casey_stopwords &lt;- c(&quot;0085&quot;, &quot;009f&quot;, &quot;f0&quot;, &quot;00a6&quot;)
+casey_replacers &lt;- c(&quot;&#39;s&quot;)
+tweets_casey &lt;- count_twitter_bigrams(df_casey, custom_stopwords = casey_stopwords)
+
+tweets_casey %&gt;% 
+  rename(count = n) %&gt;% 
+  head() %&gt;% 
+  kable(&quot;html&quot;) %&gt;% 
+  kable_styling()</code></pre>
+<table class="table" style="margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+word1
+</th>
+<th style="text-align:left;">
+word2
+</th>
+<th style="text-align:right;">
+count
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+health
+</td>
+<td style="text-align:left;">
+care
+</td>
+<td style="text-align:right;">
+226
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+credits
+</td>
+<td style="text-align:left;">
+paying
+</td>
+<td style="text-align:right;">
+123
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+middle
+</td>
+<td style="text-align:left;">
+class
+</td>
+<td style="text-align:right;">
+94
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+age
+</td>
+<td style="text-align:left;">
+tax
+</td>
+<td style="text-align:right;">
+80
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+50
+</td>
+<td style="text-align:left;">
+64
+</td>
+<td style="text-align:right;">
+69
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+tax
+</td>
+<td style="text-align:left;">
+50
+</td>
+<td style="text-align:right;">
+67
+</td>
+</tr>
+</tbody>
+</table>
+<p>This network graph shows how the words are related:</p>
+<pre class="r"><code>visualize_bigrams(tweets_casey, 20,
+                  title = &quot;@SenBobCasey tweets&quot;,
+                  subtitle = &quot;Bigram network&quot;,
+                  caption = &quot;@conor_tompkins&quot;)</code></pre>
+<p><img src="/post/comparing-u-s-senators-casey-and-toomey/index_files/figure-html/visualize_casey_bigrams-1.png" width="1152" />
+Takeaway: Senator Casey focused on the tax cut and ACA repeal bills.</p>
+<p>This code extracts the bigrams from Senator Toomey’s tweets:</p>
+<pre class="r"><code>toomey_stopwords &lt;- c(&quot;0085&quot;, &quot;009f&quot;, &quot;f0&quot;, &quot;00a6&quot;)
+tweets_toomey &lt;- count_twitter_bigrams(df_toomey, custom_stopwords = toomey_stopwords)
+                                       
+tweets_toomey %&gt;% 
+  rename(count = n) %&gt;% 
+  head() %&gt;% 
+  kable(&quot;html&quot;) %&gt;% 
+  kable_styling()</code></pre>
+<table class="table" style="margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+word1
+</th>
+<th style="text-align:left;">
+word2
+</th>
+<th style="text-align:right;">
+count
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+happy
+</td>
+<td style="text-align:left;">
+friday
+</td>
+<td style="text-align:right;">
+45
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+happy
+</td>
+<td style="text-align:left;">
+birthday
+</td>
+<td style="text-align:right;">
+39
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+weekly
+</td>
+<td style="text-align:left;">
+update
+</td>
+<td style="text-align:right;">
+39
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+health
+</td>
+<td style="text-align:left;">
+care
+</td>
+<td style="text-align:right;">
+36
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+friday
+</td>
+<td style="text-align:left;">
+pa
+</td>
+<td style="text-align:right;">
+32
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+inbox
+</td>
+<td style="text-align:left;">
+delivery
+</td>
+<td style="text-align:right;">
+24
+</td>
+</tr>
+</tbody>
+</table>
+<p>This is the bigram network plot for Senator Toomey:</p>
+<pre class="r"><code>visualize_bigrams(tweets_toomey, 20,
+                  title = &quot;@SenToomey tweets&quot;,
+                  subtitle = &quot;Bigram network&quot;,
+                  caption = &quot;@conor_tompkins&quot;)</code></pre>
+<p><img src="/post/comparing-u-s-senators-casey-and-toomey/index_files/figure-html/visualize_toomey_bigrams-1.png" width="1152" />
+Takeaway: Senator Toomey’s bigrams reflect that he uses Twitter to issue weekly updates and notify constituents about his newsletter.</p>
+</div>
+<div id="word-correlation" class="section level2">
+<h2>Word correlation</h2>
+<p>We can also calculate and graph how the words in the tweets are correlated with each other. This code also stems the words, which combines similar words for the sake of capturing the broader usage. For example, “county” and “counties” could be stemmed into “counti”.</p>
+<p>This code calculates and plots the correlations:</p>
+<pre class="r"><code>casey_words &lt;- word_correlations(df_casey, minimum = 75, casey_stopwords)
+
+visualize_word_correlations(casey_words, 
+                            minimum_correlation = .2,
+                            title = &quot;@SenBobCasey tweets&quot;,
+                            subtitle = &quot;Word correlation&quot;,
+                            caption = &quot;@conor_tompkins&quot;)</code></pre>
+<p><img src="/post/comparing-u-s-senators-casey-and-toomey/index_files/figure-html/word_correlation_casey-1.png" width="1248" />
+Takeaway: The two main clusters in this graph show that Senator Casey used a consistent vocabulary to discuss the tax cut bill and the effort to repeal the ACA.</p>
+<p>This code calculates and plots the correlations for Senator Toomey’s tweets:</p>
+<pre class="r"><code>toomey_words &lt;- word_correlations(df_toomey, minimum = 75, casey_stopwords)
+
+visualize_word_correlations(toomey_words, 
+                            minimum_correlation = .2,
+                            title = &quot;@SenToomey tweets&quot;,
+                            subtitle = &quot;Word correlation&quot;,
+                            caption = &quot;@conor_tompkins&quot;)</code></pre>
+<p><img src="/post/comparing-u-s-senators-casey-and-toomey/index_files/figure-html/word_correlation_toomey-1.png" width="1248" />
+Takeaway: This plot shows that Senator Toomey used a consistent vocabulary to discuss his main policy goal, the tax cut bill.</p>
+</div>
+<div id="word-frequency-comparison" class="section level2">
+<h2>Word frequency comparison</h2>
+<p>We can also compare how frequently the senators use various words. To set a baseline, Senator Toomey tweeted around 800 more times than Senator Casey in this sample of their tweets.</p>
+<pre class="r"><code>tweets &lt;- bind_rows(df_casey, df_toomey)
+
+replace_reg &lt;- &quot;https://t.co/[A-Za-z\\d]+|http://[A-Za-z\\d]+|&amp;amp;|&amp;lt;|&amp;gt;|RT|https|&#39;s|&#39;&quot;
+unnest_reg &lt;- &quot;([^A-Za-z_\\d#@&#39;]|&#39;(?![A-Za-z_\\d#@]))&quot;
+
+tweets %&gt;% 
+  select(senator, status_id, text, is_quote, is_retweet) %&gt;% 
+  filter(is_quote == FALSE, is_retweet == FALSE) %&gt;% 
+  mutate(text = str_replace_all(text, replace_reg, &quot;&quot;),
+         senator = factor(senator, levels = c(&quot;SenToomey&quot;, &quot;SenBobCasey&quot;))) %&gt;% 
+  count(senator) %&gt;% 
+  rename(count = n) %&gt;% 
+  head() %&gt;% 
+  kable(&quot;html&quot;) %&gt;% 
+  kable_styling()</code></pre>
+<table class="table" style="margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+senator
+</th>
+<th style="text-align:right;">
+count
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+SenToomey
+</td>
+<td style="text-align:right;">
+2916
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+SenBobCasey
+</td>
+<td style="text-align:right;">
+2180
+</td>
+</tr>
+</tbody>
+</table>
+<p>This code breaks the tweets down into single words:</p>
+<pre class="r"><code>tidy_tweets &lt;- tweets %&gt;% 
+  select(senator, status_id, text, is_quote, is_retweet) %&gt;% 
+  filter(is_quote == FALSE, is_retweet == FALSE) %&gt;% 
+  mutate(text = str_replace_all(text, replace_reg, &quot;&quot;),
+         senator = factor(senator, levels = c(&quot;SenBobCasey&quot;, &quot;SenToomey&quot;))) %&gt;%
+  unnest_tokens(word, text, token = &quot;regex&quot;, pattern = unnest_reg) %&gt;%
+  filter(!word %in% stop_words$word,
+         !word %in% c(&quot;009f&quot;, &quot;00a6&quot;, &quot;f0&quot;, &quot;http&quot;, &quot;.va&quot;),
+         str_detect(word, &quot;[a-z]&quot;))</code></pre>
+<p>This code calculates how frequently each word is used by each senator, given how many tweets each senator has:</p>
+<pre class="r"><code>frequency &lt;- tidy_tweets %&gt;% 
+  group_by(senator) %&gt;% 
+  count(word, sort = TRUE) %&gt;% 
+  left_join(tidy_tweets %&gt;% 
+              group_by(senator) %&gt;% 
+              summarise(total = n())) %&gt;%
+  mutate(freq = n/total)
+
+frequency %&gt;% 
+  rename(count = n) %&gt;% 
+  head() %&gt;% 
+  kable(&quot;html&quot;) %&gt;% 
+  kable_styling()</code></pre>
+<table class="table" style="margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+senator
+</th>
+<th style="text-align:left;">
+word
+</th>
+<th style="text-align:right;">
+count
+</th>
+<th style="text-align:right;">
+total
+</th>
+<th style="text-align:right;">
+freq
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+SenToomey
+</td>
+<td style="text-align:left;">
+pa
+</td>
+<td style="text-align:right;">
+344
+</td>
+<td style="text-align:right;">
+27773
+</td>
+<td style="text-align:right;">
+0.0123861
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+SenBobCasey
+</td>
+<td style="text-align:left;">
+tax
+</td>
+<td style="text-align:right;">
+336
+</td>
+<td style="text-align:right;">
+20002
+</td>
+<td style="text-align:right;">
+0.0167983
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+SenBobCasey
+</td>
+<td style="text-align:left;">
+health
+</td>
+<td style="text-align:right;">
+299
+</td>
+<td style="text-align:right;">
+20002
+</td>
+<td style="text-align:right;">
+0.0149485
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+SenBobCasey
+</td>
+<td style="text-align:left;">
+care
+</td>
+<td style="text-align:right;">
+282
+</td>
+<td style="text-align:right;">
+20002
+</td>
+<td style="text-align:right;">
+0.0140986
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+SenBobCasey
+</td>
+<td style="text-align:left;">
+<span class="citation">@realdonaldtrump</span>
+</td>
+<td style="text-align:right;">
+227
+</td>
+<td style="text-align:right;">
+20002
+</td>
+<td style="text-align:right;">
+0.0113489
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+SenToomey
+</td>
+<td style="text-align:left;">
+happy
+</td>
+<td style="text-align:right;">
+189
+</td>
+<td style="text-align:right;">
+27773
+</td>
+<td style="text-align:right;">
+0.0068052
+</td>
+</tr>
+</tbody>
+</table>
+<p>This code spits the frequency into two columns, one for each senator. The data is sorted by how often Senator Casey used the word.</p>
+<pre class="r"><code>frequency &lt;- frequency %&gt;% 
+  select(senator, word, freq) %&gt;% 
+  spread(senator, freq) %&gt;%
+  arrange(desc(SenBobCasey))
+
+frequency %&gt;% 
+  head() %&gt;% 
+  kable(&quot;html&quot;) %&gt;% 
+  kable_styling()</code></pre>
+<table class="table" style="margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+word
+</th>
+<th style="text-align:right;">
+SenBobCasey
+</th>
+<th style="text-align:right;">
+SenToomey
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+tax
+</td>
+<td style="text-align:right;">
+0.0167983
+</td>
+<td style="text-align:right;">
+0.0044648
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+health
+</td>
+<td style="text-align:right;">
+0.0149485
+</td>
+<td style="text-align:right;">
+0.0017643
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+care
+</td>
+<td style="text-align:right;">
+0.0140986
+</td>
+<td style="text-align:right;">
+0.0018363
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+<span class="citation">@realdonaldtrump</span>
+</td>
+<td style="text-align:right;">
+0.0113489
+</td>
+<td style="text-align:right;">
+0.0004321
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+families
+</td>
+<td style="text-align:right;">
+0.0088991
+</td>
+<td style="text-align:right;">
+0.0026645
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+lose
+</td>
+<td style="text-align:right;">
+0.0083992
+</td>
+<td style="text-align:right;">
+0.0001440
+</td>
+</tr>
+</tbody>
+</table>
+<p>This plot compares how often the senators use each word. I think it gives a somewhat fuzzy view of the policy issues each senator focuses on.</p>
+<pre class="r"><code>ggplot(frequency, aes(SenBobCasey, SenToomey)) +
+  geom_jitter(alpha = 0.1, size = 2.5, width = 0.25, height = 0.25) +
+  geom_text(aes(label = word), check_overlap = TRUE, vjust = 1.5) +
+  scale_x_log10(labels = percent_format()) +
+  scale_y_log10(labels = percent_format()) +
+  geom_abline(color = &quot;red&quot;) +
+  labs(title = title,
+       x = &quot;Used more by @SenBobCasey&quot;,
+       y = &quot;Used more by @SenToomey&quot;,
+       caption = caption)</code></pre>
+<p><img src="/post/comparing-u-s-senators-casey-and-toomey/index_files/figure-html/plot_word_frequency-1.png" width="864" /></p>
+<p>Takeaway: Senator Toomey was more likely to use words like “economy”, “safety”, “reform”, and “prayers”. Senator Casey was more likely to use words like “deficit”, “premiums”, “medicaid”, “disabilities”, “credits”, and “corportations”.</p>
+</div>
+<div id="word-ratios" class="section level2">
+<h2>Word ratios</h2>
+<p>We can also directly compare how often each senator used a word. This code calculates that differece. The higher the log ratio, the greater the difference in how often each senator used the word.</p>
+<pre class="r"><code>word_ratios &lt;- tidy_tweets %&gt;%
+  filter(!str_detect(word, &quot;^@&quot;)) %&gt;%
+  count(word, senator) %&gt;%
+  filter(sum(n) &gt;= 10) %&gt;%
+  ungroup() %&gt;%
+  spread(senator, n, fill = 0) %&gt;%
+  mutate_if(is.numeric, funs((. + 1) / sum(. + 1))) %&gt;%
+  mutate(logratio = log(SenBobCasey / SenToomey)) %&gt;%
+  arrange(desc(logratio))
+
+word_ratios %&gt;% 
+  arrange(desc(abs(logratio))) %&gt;%
+  head() %&gt;% 
+  kable(&quot;html&quot;) %&gt;% 
+  kable_styling()</code></pre>
+<table class="table" style="margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+word
+</th>
+<th style="text-align:right;">
+SenBobCasey
+</th>
+<th style="text-align:right;">
+SenToomey
+</th>
+<th style="text-align:right;">
+logratio
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+#trumpcare
+</td>
+<td style="text-align:right;">
+0.0055571
+</td>
+<td style="text-align:right;">
+0.0000283
+</td>
+<td style="text-align:right;">
+5.279218
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+scheme
+</td>
+<td style="text-align:right;">
+0.0034820
+</td>
+<td style="text-align:right;">
+0.0000283
+</td>
+<td style="text-align:right;">
+4.811743
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+olds
+</td>
+<td style="text-align:right;">
+0.0024268
+</td>
+<td style="text-align:right;">
+0.0000283
+</td>
+<td style="text-align:right;">
+4.450729
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+#noagetax
+</td>
+<td style="text-align:right;">
+0.0023565
+</td>
+<td style="text-align:right;">
+0.0000283
+</td>
+<td style="text-align:right;">
+4.421315
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+#taxreform
+</td>
+<td style="text-align:right;">
+0.0000352
+</td>
+<td style="text-align:right;">
+0.0024356
+</td>
+<td style="text-align:right;">
+-4.237725
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+#obamacare
+</td>
+<td style="text-align:right;">
+0.0000352
+</td>
+<td style="text-align:right;">
+0.0022091
+</td>
+<td style="text-align:right;">
+-4.140086
+</td>
+</tr>
+</tbody>
+</table>
+<p>Senator Toomey often references wife Kris in his tweets, usually while offering condolences or prayers.</p>
+<p>This plot shows which words are more uniquely used by each senator.</p>
+<pre class="r"><code>word_ratios %&gt;%
+  group_by(logratio &lt; 0) %&gt;%
+  top_n(15, abs(logratio)) %&gt;%
+  ungroup() %&gt;%
+  mutate(word = reorder(word, logratio)) %&gt;%
+  ggplot(aes(word, logratio, fill = logratio &lt; 0)) +
+  geom_col(alpha = .8) +
+  coord_flip() +
+  labs(x = &quot;&quot;,
+       y = &quot;Log odds ratio (Casey/Toomey)&quot;) +
+  scale_fill_manual(name = &quot;&quot;, 
+                    values = c(&quot;blue&quot;, &quot;red&quot;),
+                    breaks = c(FALSE, TRUE), 
+                    labels = c(&quot;@SenBobCasey&quot;, &quot;@SenToomey&quot;)) +
+  theme(panel.grid.major.y = element_blank())</code></pre>
+<p><img src="/post/comparing-u-s-senators-casey-and-toomey/index_files/figure-html/plot_ratios-1.png" width="672" /></p>
+<p>Takeaway: This plot shows the stark divide between how each senator views some of the major policy issues. Senator Casey directly criticized the problems he saw during the tax cut and ACA fight (“trumpcare”, “scheme”, “lose”, “giveaways”, and “#noagetax”). Senator Toomey referenced “#philly” and “#obamacare” much more, and framed the tax cut bill as “#taxreform”.</p>
+</div>
