@@ -1,0 +1,747 @@
+---
+# Documentation: https://sourcethemes.com/academic/docs/managing-content/
+
+title: "R 311 Pothole Workshop Code for Pittsburgh"
+subtitle: ""
+summary: ""
+authors: [Conor Tompkins]
+tags: [WPRDC, Pittsburgh, Potholes, Code for Pittsburgh]
+categories: [WPRDC, Pittsburgh, Potholes, Code for Pittsburgh]
+date: 2018-04-18
+lastmod: 2020-09-27T13:29:17-04:00
+featured: false
+draft: false
+
+# Featured image
+# To use, add an image named `featured.jpg/png` to your page's folder.
+# Focal points: Smart, Center, TopLeft, Top, TopRight, Left, Right, BottomLeft, Bottom, BottomRight.
+image:
+  caption: ""
+  focal_point: ""
+  preview_only: false
+
+# Projects (optional).
+#   Associate this post with one or more of your projects.
+#   Simply enter your project's folder or file name without extension.
+#   E.g. `projects = ["internal-project"]` references `content/project/deep-learning/index.md`.
+#   Otherwise, set `projects = []`.
+projects: []
+---
+
+
+
+<div id="goals" class="section level1">
+<h1>Goals</h1>
+<ul>
+<li>Learn how R works</li>
+<li>Gain basic skills for exploratory analysis with R</li>
+<li>Learn something about local data and potholes!</li>
+</ul>
+<p>If we are successful, you should be able to hit the ground running on your own project with R</p>
+</div>
+<div id="setup" class="section level1">
+<h1>Setup</h1>
+<p>Install R from <a href="https://cran.r-project.org/">CRAN</a></p>
+<ul>
+<li>Use the default options in the installation process</li>
+</ul>
+<p>Install RStudio from <a href="https://www.rstudio.com/products/rstudio/#Desktop">RStudio</a></p>
+<ul>
+<li>RStudio Desktop</li>
+</ul>
+</div>
+<div id="what-is-r" class="section level1">
+<h1>What is R</h1>
+<p>R is an interpreted programming language for statistics</p>
+<div id="rstudio" class="section level3">
+<h3>RStudio</h3>
+<p>Integrated Development Environment for R</p>
+<ol style="list-style-type: decimal">
+<li>Code editor</li>
+<li>Console</li>
+<li>Workspace (Environment, History, Connections, Git)</li>
+<li>Plots and Files (Packages, Help, Viewer)</li>
+</ol>
+<p>We will enter our code in the Code Editor panel. When you execute code in the code editor, the output is shown in the Console (or the Plots or Viewer) panel.</p>
+<p><img src="rstudio_image.png" />
+<a href="http://www.sthda.com/english/wiki/running-rstudio-and-setting-up-your-working-directory-easy-r-programming">Image from the STHDA</a></p>
+<p>Install the tidyverse, lubridate, and ggmap packages</p>
+<pre class="r"><code>install.packages(c(&quot;tidyverse&quot;, &quot;lubridate&quot;, &quot;ggmap&quot;))
+#you will see activity in the console as the packages are installed</code></pre>
+<p>Create a folder called “R workshop”</p>
+<p>Download the 311 data from the <a href="https://data.wprdc.org/dataset/311-data">WPRDC</a></p>
+<p>Move that CSV into the “R workshop” folder</p>
+</div>
+</div>
+<div id="how-does-r-work" class="section level1">
+<h1>How Does R Work?</h1>
+<div id="basic-functions" class="section level2">
+<h2>Basic Functions</h2>
+<ul>
+<li>add</li>
+<li>subtract</li>
+<li>strings</li>
+</ul>
+<pre class="r"><code>1</code></pre>
+<pre><code>## [1] 1</code></pre>
+<pre class="r"><code>1 + 2</code></pre>
+<pre><code>## [1] 3</code></pre>
+<pre class="r"><code>10 / 2</code></pre>
+<pre><code>## [1] 5</code></pre>
+<pre class="r"><code>5 * 2</code></pre>
+<pre><code>## [1] 10</code></pre>
+<pre class="r"><code>&quot;this is a string. strings in R are surrounded by quotation marks.&quot;</code></pre>
+<pre><code>## [1] &quot;this is a string. strings in R are surrounded by quotation marks.&quot;</code></pre>
+<p>Type matters</p>
+<pre class="r"><code>&quot;1&quot; + 1</code></pre>
+<pre><code>## Error in &quot;1&quot; + 1: non-numeric argument to binary operator</code></pre>
+<p>str() checks the type of the object</p>
+<pre class="r"><code>str(1)</code></pre>
+<pre><code>##  num 1</code></pre>
+<pre class="r"><code>str(&quot;1&quot;)</code></pre>
+<pre><code>##  chr &quot;1&quot;</code></pre>
+</div>
+<div id="objects-functions-and-assignment" class="section level2">
+<h2>Objects, Functions, and Assignment</h2>
+<p>Reminder that objects are shown in the Environment panel (top right panel)</p>
+<pre class="r"><code>x</code></pre>
+<pre><code>## Error in eval(expr, envir, enclos): object &#39;x&#39; not found</code></pre>
+<p>You assign values to objects using “&lt;-”</p>
+<pre class="r"><code>x &lt;- 1
+x </code></pre>
+<pre><code>## [1] 1</code></pre>
+<p>Type out the object’s name and execute it to print it in the console</p>
+<p>You can overwrite (or update) an object’s value</p>
+<pre class="r"><code>x &lt;- 2
+x</code></pre>
+<pre><code>## [1] 2</code></pre>
+<p>You can manipulate objects with operators</p>
+<pre class="r"><code>x &lt;- 1
+y &lt;- 5
+
+x + y</code></pre>
+<pre><code>## [1] 6</code></pre>
+<p>c() means “concatenate”. It creates vectors</p>
+<pre class="r"><code>a &lt;- c(x, y)
+a</code></pre>
+<pre><code>## [1] 1 5</code></pre>
+<p>: creates a sequence of numbers</p>
+<pre class="r"><code>1:10</code></pre>
+<pre><code>##  [1]  1  2  3  4  5  6  7  8  9 10</code></pre>
+<p>You can perform functions on objects</p>
+<pre class="r"><code>z &lt;- sum(a)
+z</code></pre>
+<pre><code>## [1] 6</code></pre>
+</div>
+<div id="dataframes" class="section level2">
+<h2>Dataframes</h2>
+<p>Dataframes are rectangular objects that consist of rows and columns, similar to what you see in an Excel spreadsheet</p>
+<pre class="r"><code>my_df &lt;- data.frame(a = 1:5,
+                b = 6:10,
+                c = c(&quot;a&quot;, &quot;b&quot;, &quot;c&quot;, &quot;d&quot;, &quot;e&quot;))
+my_df</code></pre>
+<pre><code>##   a  b c
+## 1 1  6 a
+## 2 2  7 b
+## 3 3  8 c
+## 4 4  9 d
+## 5 5 10 e</code></pre>
+<p>Select individual columns in a dataframe with the $ operator</p>
+<pre class="r"><code>my_df$a</code></pre>
+<pre><code>## [1] 1 2 3 4 5</code></pre>
+<p>“&lt;-” and “=” do the same thing. To minimize confusion, many people use “&lt;-” for objects and “=” for assigning variables within functions or dataframes</p>
+<pre class="r"><code>x &lt;- 1
+
+z &lt;- data.frame(a = 1:5,
+                b = 6:10)
+z</code></pre>
+<pre><code>##   a  b
+## 1 1  6
+## 2 2  7
+## 3 3  8
+## 4 4  9
+## 5 5 10</code></pre>
+</div>
+<div id="logic" class="section level2">
+<h2>Logic</h2>
+<p>“x == y” means “is x equal to y?”</p>
+<pre class="r"><code>1 == 2</code></pre>
+<pre><code>## [1] FALSE</code></pre>
+<p>“!” means “not”</p>
+<pre class="r"><code>!FALSE</code></pre>
+<pre><code>## [1] TRUE</code></pre>
+<p>TRUE = 1, FALSE = 0</p>
+<pre class="r"><code>TRUE + FALSE</code></pre>
+<pre><code>## [1] 1</code></pre>
+<pre class="r"><code>TRUE + TRUE</code></pre>
+<pre><code>## [1] 2</code></pre>
+<p>R is case-sensitive</p>
+<pre class="r"><code>&quot;a&quot; == &quot;A&quot;</code></pre>
+<pre><code>## [1] FALSE</code></pre>
+</div>
+<div id="loading-packages" class="section level2">
+<h2>Loading packages</h2>
+<pre class="r"><code>library(package_name)</code></pre>
+<p>You have to load your packages each time you start R. Do not use quotation marks in the library() function</p>
+</div>
+<div id="commenting" class="section level2">
+<h2>Commenting</h2>
+<p>Any code that follows a “#” is treated as a comment, and is not executed</p>
+<pre class="r"><code>1 + 1</code></pre>
+<pre><code>## [1] 2</code></pre>
+<pre class="r"><code>#1 + 1
+#code that is &quot;commented out&quot; will not be executed</code></pre>
+<p>Comment your code to make sure you understand it. It is aso useful to other people who use your code, including Future You.</p>
+<p>Be kind to Future You. Comment your code.</p>
+</div>
+<div id="getting-help-with-r" class="section level2">
+<h2>Getting help with R</h2>
+<p>Use the built-in documentation. Put a “?” before the name of a function to access the documentation in the Help panel</p>
+<pre class="r"><code>?mean</code></pre>
+<p><a href="https://stackoverflow.com/questions/tagged/r?sort=frequent&amp;pageSize=15">StackOverflow</a></p>
+</div>
+<div id="working-directory" class="section level2">
+<h2>Working Directory</h2>
+<p>The working directory is where your R scripts and your data are stored</p>
+<div id="how-to-set-up-the-working-directory" class="section level3">
+<h3>How to set up the working directory</h3>
+<p>This command prints the current working directory</p>
+<pre class="r"><code>getwd()</code></pre>
+<p>Use the menu to set up your working directory</p>
+<p>Session menu -&gt; Set working directory -&gt; choose your folder</p>
+<p>This command does the same thing</p>
+<pre class="r"><code>setwd()</code></pre>
+</div>
+</div>
+<div id="compare-to-excel" class="section level2">
+<h2>Compare to Excel</h2>
+<p>R separates the data from the analysis. The data is stored in files (CSV, JSON, etc). The analysis is stored in scripts. This makes it easier to share analysis performed in R. No need to take screenshots of your workflow in Excel. You have a record of everything that was done to the data. R also allows you to scale your analysis up to larger datasets and more complex workflows, where Excel would require lots of risky repetition of the same task.</p>
+</div>
+</div>
+<div id="what-is-the-tidyverse" class="section level1">
+<h1>What is the Tidyverse?</h1>
+<p>A group of R packages that use a common grammar for wrangling, analyzing, modeling, and graphing data</p>
+<ul>
+<li>Focus on dataframes</li>
+<li>Columns and rows</li>
+</ul>
+<div id="key-tidyverse-functions-and-operators" class="section level2">
+<h2>Key Tidyverse functions and operators</h2>
+<ul>
+<li><strong>select</strong> columns</li>
+<li><strong>filter</strong> rows</li>
+<li><strong>mutate</strong> new columns</li>
+<li><strong>group_by</strong> and <strong>summarize</strong> rows</li>
+<li><strong>ggplot2</strong> your data</li>
+<li>The pipe %&gt;%</li>
+</ul>
+<pre class="r"><code>library(tidyverse)</code></pre>
+<pre><code>## ── Attaching packages ──────────────── tidyverse 1.3.0 ──</code></pre>
+<pre><code>## ✓ ggplot2 3.3.2     ✓ purrr   0.3.4
+## ✓ tibble  3.0.3     ✓ dplyr   1.0.2
+## ✓ tidyr   1.1.2     ✓ stringr 1.4.0
+## ✓ readr   1.3.1     ✓ forcats 0.5.0</code></pre>
+<pre><code>## ── Conflicts ─────────────────── tidyverse_conflicts() ──
+## x dplyr::filter() masks stats::filter()
+## x dplyr::lag()    masks stats::lag()</code></pre>
+<pre class="r"><code>library(lubridate)</code></pre>
+<pre><code>## 
+## Attaching package: &#39;lubridate&#39;</code></pre>
+<pre><code>## The following objects are masked from &#39;package:base&#39;:
+## 
+##     date, intersect, setdiff, union</code></pre>
+<p>read_csv() reads CSV files from your working directory</p>
+<pre class="r"><code>df &lt;- read_csv(&quot;your_file_name_here.csv&quot;)</code></pre>
+<pre><code>## Parsed with column specification:
+## cols(
+##   `_id` = col_double(),
+##   REQUEST_ID = col_double(),
+##   CREATED_ON = col_datetime(format = &quot;&quot;),
+##   REQUEST_TYPE = col_character(),
+##   REQUEST_ORIGIN = col_character(),
+##   STATUS = col_double(),
+##   DEPARTMENT = col_character(),
+##   NEIGHBORHOOD = col_character(),
+##   COUNCIL_DISTRICT = col_double(),
+##   WARD = col_double(),
+##   TRACT = col_double(),
+##   PUBLIC_WORKS_DIVISION = col_double(),
+##   PLI_DIVISION = col_double(),
+##   POLICE_ZONE = col_double(),
+##   FIRE_ZONE = col_character(),
+##   X = col_double(),
+##   Y = col_double(),
+##   GEO_ACCURACY = col_character()
+## )</code></pre>
+<pre class="r"><code>colnames(df) &lt;- tolower(colnames(df)) #make all the column names lowercase
+
+#initial data munging to get the dates in shape
+df %&gt;%
+  mutate(date = ymd(str_sub(created_on, 1, 10)),
+         time = hms(str_sub(created_on, 11, 18)),
+         month = month(date, label = TRUE), 
+         year = year(date),
+         yday = yday(date)) %&gt;% 
+  select(-c(created_on, time)) -&gt; df</code></pre>
+<p>Explore the data</p>
+<pre class="r"><code>df #type the name of the object to preview it</code></pre>
+<pre><code>## # A tibble: 225,189 x 21
+##     `_id` request_id request_type request_origin status department neighborhood
+##     &lt;dbl&gt;      &lt;dbl&gt; &lt;chr&gt;        &lt;chr&gt;           &lt;dbl&gt; &lt;chr&gt;      &lt;chr&gt;       
+##  1 154245      54111 Rodent cont… Call Center         1 Animal Ca… Middle Hill 
+##  2 154246      53833 Rodent cont… Call Center         1 Animal Ca… Squirrel Hi…
+##  3 154247      52574 Potholes     Call Center         1 DPW - Str… Larimer     
+##  4 154248      54293 Building Wi… Control Panel       1 Permits, … &lt;NA&gt;        
+##  5 154249      53560 Potholes     Call Center         1 DPW - Str… Homewood No…
+##  6 154250      49519 Potholes     Call Center         1 DPW - Str… Homewood No…
+##  7 154251      49484 Potholes     Call Center         1 DPW - Str… Homewood No…
+##  8 154252      53787 Rodent cont… Call Center         1 Animal Ca… South Side …
+##  9 154253      52887 Potholes     Call Center         1 DPW - Str… East Hills  
+## 10 154254      53599 Rodent cont… Call Center         1 Animal Ca… East Allegh…
+## # … with 225,179 more rows, and 14 more variables: council_district &lt;dbl&gt;,
+## #   ward &lt;dbl&gt;, tract &lt;dbl&gt;, public_works_division &lt;dbl&gt;, pli_division &lt;dbl&gt;,
+## #   police_zone &lt;dbl&gt;, fire_zone &lt;chr&gt;, x &lt;dbl&gt;, y &lt;dbl&gt;, geo_accuracy &lt;chr&gt;,
+## #   date &lt;date&gt;, month &lt;ord&gt;, year &lt;dbl&gt;, yday &lt;dbl&gt;</code></pre>
+<pre class="r"><code>glimpse(df) #get a summary of the dataframe</code></pre>
+<pre><code>## Rows: 225,189
+## Columns: 21
+## $ `_id`                 &lt;dbl&gt; 154245, 154246, 154247, 154248, 154249, 154250,…
+## $ request_id            &lt;dbl&gt; 54111, 53833, 52574, 54293, 53560, 49519, 49484…
+## $ request_type          &lt;chr&gt; &quot;Rodent control&quot;, &quot;Rodent control&quot;, &quot;Potholes&quot;,…
+## $ request_origin        &lt;chr&gt; &quot;Call Center&quot;, &quot;Call Center&quot;, &quot;Call Center&quot;, &quot;C…
+## $ status                &lt;dbl&gt; 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,…
+## $ department            &lt;chr&gt; &quot;Animal Care &amp; Control&quot;, &quot;Animal Care &amp; Control…
+## $ neighborhood          &lt;chr&gt; &quot;Middle Hill&quot;, &quot;Squirrel Hill North&quot;, &quot;Larimer&quot;…
+## $ council_district      &lt;dbl&gt; 6, 8, 9, NA, 9, 9, 9, 3, 9, 1, 4, 4, 9, 9, 9, 7…
+## $ ward                  &lt;dbl&gt; 5, 14, 12, NA, 13, 13, 13, 16, 13, 23, 19, 32, …
+## $ tract                 &lt;dbl&gt; 42003050100, 42003140300, 42003120800, NA, 4200…
+## $ public_works_division &lt;dbl&gt; 3, 3, 2, NA, 2, 2, 2, 4, 2, 1, 4, 4, 2, 2, 2, 2…
+## $ pli_division          &lt;dbl&gt; 5, 14, 12, NA, 13, 13, 13, 16, 13, 23, 19, 32, …
+## $ police_zone           &lt;dbl&gt; 2, 4, 5, NA, 5, 5, 5, 3, 5, 1, 6, 3, 5, 5, 4, 5…
+## $ fire_zone             &lt;chr&gt; &quot;2-1&quot;, &quot;2-18&quot;, &quot;3-12&quot;, NA, &quot;3-17&quot;, &quot;3-17&quot;, &quot;3-1…
+## $ x                     &lt;dbl&gt; -79.97765, -79.92450, -79.91455, NA, -79.89539,…
+## $ y                     &lt;dbl&gt; 40.44579, 40.43986, 40.46527, NA, 40.45929, 40.…
+## $ geo_accuracy          &lt;chr&gt; &quot;APPROXIMATE&quot;, &quot;APPROXIMATE&quot;, &quot;EXACT&quot;, &quot;OUT_OF_…
+## $ date                  &lt;date&gt; 2016-03-10, 2016-03-09, 2016-03-03, 2016-03-11…
+## $ month                 &lt;ord&gt; Mar, Mar, Mar, Mar, Mar, Feb, Feb, Mar, Mar, Ma…
+## $ year                  &lt;dbl&gt; 2016, 2016, 2016, 2016, 2016, 2016, 2016, 2016,…
+## $ yday                  &lt;dbl&gt; 70, 69, 63, 71, 68, 53, 53, 69, 64, 68, 69, 71,…</code></pre>
+<div id="the-pipe" class="section level3">
+<h3>The pipe</h3>
+<p>%&gt;% means “and then”</p>
+<p>%&gt;% passes the dataframe to the next function</p>
+</div>
+<div id="select" class="section level3">
+<h3>select</h3>
+<p>select() selects the columns you want to work with. You can also exclude columns using “-”</p>
+<pre class="r"><code>df %&gt;% #select the dataframe
+  select(date, request_type) #select the date and request_type columns</code></pre>
+<pre><code>## # A tibble: 225,189 x 2
+##    date       request_type             
+##    &lt;date&gt;     &lt;chr&gt;                    
+##  1 2016-03-10 Rodent control           
+##  2 2016-03-09 Rodent control           
+##  3 2016-03-03 Potholes                 
+##  4 2016-03-11 Building Without a Permit
+##  5 2016-03-08 Potholes                 
+##  6 2016-02-22 Potholes                 
+##  7 2016-02-22 Potholes                 
+##  8 2016-03-09 Rodent control           
+##  9 2016-03-04 Potholes                 
+## 10 2016-03-08 Rodent control           
+## # … with 225,179 more rows</code></pre>
+</div>
+<div id="filter" class="section level3">
+<h3>filter</h3>
+<p>filter() uses logic to include or exclude rows based on the criteria you set</p>
+<p>You can translate the following code into this English sentence:
+Take our dataframe “df”, and then <strong>select</strong> the date and request_type columns, and then <strong>filter</strong> only the rows where the request_type is “Potholes”.</p>
+<pre class="r"><code>df %&gt;% 
+  select(date, request_type) %&gt;% 
+  filter(request_type == &quot;Potholes&quot;) #use the string &quot;Potholes&quot; to filter the dataframe</code></pre>
+<pre><code>## # A tibble: 31,735 x 2
+##    date       request_type
+##    &lt;date&gt;     &lt;chr&gt;       
+##  1 2016-03-03 Potholes    
+##  2 2016-03-08 Potholes    
+##  3 2016-02-22 Potholes    
+##  4 2016-02-22 Potholes    
+##  5 2016-03-04 Potholes    
+##  6 2016-03-11 Potholes    
+##  7 2016-03-08 Potholes    
+##  8 2016-03-08 Potholes    
+##  9 2016-03-08 Potholes    
+## 10 2016-03-08 Potholes    
+## # … with 31,725 more rows</code></pre>
+</div>
+<div id="mutate" class="section level3">
+<h3>mutate</h3>
+<p>mutate() adds new columns, or modifies existing columns</p>
+<pre class="r"><code>df %&gt;% 
+  select(date, request_type) %&gt;% 
+  filter(request_type == &quot;Potholes&quot;) %&gt;% 
+  mutate(weekday = wday(date, label = TRUE)) #add the wday column for day of the week</code></pre>
+<pre><code>## # A tibble: 31,735 x 3
+##    date       request_type weekday
+##    &lt;date&gt;     &lt;chr&gt;        &lt;ord&gt;  
+##  1 2016-03-03 Potholes     Thu    
+##  2 2016-03-08 Potholes     Tue    
+##  3 2016-02-22 Potholes     Mon    
+##  4 2016-02-22 Potholes     Mon    
+##  5 2016-03-04 Potholes     Fri    
+##  6 2016-03-11 Potholes     Fri    
+##  7 2016-03-08 Potholes     Tue    
+##  8 2016-03-08 Potholes     Tue    
+##  9 2016-03-08 Potholes     Tue    
+## 10 2016-03-08 Potholes     Tue    
+## # … with 31,725 more rows</code></pre>
+</div>
+<div id="group_by-and-summarize" class="section level3">
+<h3>group_by and summarize</h3>
+<p>group_by() and summarize() allow you to gather groups of rows and perform functions on them</p>
+<p>Typical functions</p>
+<ul>
+<li>sum()</li>
+<li>mean()</li>
+<li>sd() standard deviation</li>
+<li>n() the number of rows</li>
+</ul>
+<pre class="r"><code>(df %&gt;% 
+  select(date, request_type) %&gt;% #select columns
+  filter(request_type == &quot;Potholes&quot;) %&gt;% #filter by &quot;Potholes&quot;
+  mutate(month = month(date, label = TRUE)) %&gt;% #add month column
+  group_by(request_type, month) %&gt;% #group by the unqiue request_type values and month values
+  summarize(count = n()) %&gt;% #summarize to count the number of rows in each combination of request_type and month
+  arrange(desc(count)) -&gt; df_potholes_month) #arrange the rows by the number of requests</code></pre>
+<pre><code>## `summarise()` regrouping output by &#39;request_type&#39; (override with `.groups` argument)</code></pre>
+<pre><code>## # A tibble: 12 x 3
+## # Groups:   request_type [1]
+##    request_type month count
+##    &lt;chr&gt;        &lt;ord&gt; &lt;int&gt;
+##  1 Potholes     Feb    5569
+##  2 Potholes     Mar    3961
+##  3 Potholes     Apr    3873
+##  4 Potholes     May    3388
+##  5 Potholes     Jan    3089
+##  6 Potholes     Jun    2896
+##  7 Potholes     Jul    2688
+##  8 Potholes     Aug    1913
+##  9 Potholes     Nov    1344
+## 10 Potholes     Sep    1260
+## 11 Potholes     Oct    1113
+## 12 Potholes     Dec     641</code></pre>
+<p>Put your code in parentheses to execute it AND print the output in the console</p>
+</div>
+</div>
+</div>
+<div id="making-graphs-with-311-data" class="section level1">
+<h1>Making graphs with 311 data</h1>
+<div id="ggplot2" class="section level2">
+<h2>ggplot2</h2>
+<ul>
+<li>aesthetics (the columns you want to graph with)</li>
+<li>geoms (the shapes you want to use to graph the data)</li>
+</ul>
+<pre class="r"><code>ggplot(data = _ , aes(x = _, y = _)) +
+  geom_()</code></pre>
+<p>Graph the number of pothole requests per month</p>
+<pre class="r"><code>ggplot(data = df_potholes_month, aes(x = month, y = count)) +
+  geom_col()</code></pre>
+<p><img src="/post/r-311-pothole-workshop-code-for-pittsburgh/index_files/figure-html/unnamed-chunk-40-1.png" width="672" /></p>
+<p>Pipe your data directly into ggplot2</p>
+<pre class="r"><code>df_potholes_month %&gt;% 
+  ggplot(aes(x = month, y = count)) + #put the month column on the x axis, count on the y axis
+  geom_col() #graph the data with columns</code></pre>
+<p><img src="/post/r-311-pothole-workshop-code-for-pittsburgh/index_files/figure-html/unnamed-chunk-41-1.png" width="672" /></p>
+<p>Make it pretty. Add a title, subtitle, axes labels, captions, and themes</p>
+<pre class="r"><code>df_potholes_month %&gt;% 
+  ggplot(aes(month, count)) +
+  geom_col() + 
+  labs(title = &quot;Pothole requests to Pittsburgh 311&quot;,
+       x = &quot;&quot;,
+       y = &quot;Number of requests&quot;,
+       caption = &quot;Source: Western Pennsylvania Regional Datacenter&quot;) +
+  theme_bw()</code></pre>
+<p><img src="/post/r-311-pothole-workshop-code-for-pittsburgh/index_files/figure-html/unnamed-chunk-42-1.png" width="672" /></p>
+<p>One problems with this graph is that the data is not complete for the years 2015 and 2018</p>
+<pre class="r"><code>df %&gt;%
+  distinct(year, date) %&gt;% #get the unique combinations of year and date
+  count(year) #shortcut for group_by + summarize for counting. returns column &quot;n&quot;. calculate how many days of data each year has</code></pre>
+<pre><code>## # A tibble: 4 x 2
+##    year     n
+##   &lt;dbl&gt; &lt;int&gt;
+## 1  2015   231
+## 2  2016   366
+## 3  2017   365
+## 4  2018   100</code></pre>
+<p>Instead of plotting the raw sum, we can calculate and plot the mean number of requests per month</p>
+<pre class="r"><code>(df %&gt;% 
+  filter(date &gt;= &quot;2016-01-01&quot;, #only select the rows where the date is after 2016-01-01 and before 2018-01-1
+         date &lt;= &quot;2018-01-01&quot;,
+         request_type == &quot;Potholes&quot;) %&gt;% 
+  count(request_type, year, month) -&gt; df_filtered)</code></pre>
+<pre><code>## # A tibble: 24 x 4
+##    request_type  year month     n
+##    &lt;chr&gt;        &lt;dbl&gt; &lt;ord&gt; &lt;int&gt;
+##  1 Potholes      2016 Jan     222
+##  2 Potholes      2016 Feb     594
+##  3 Potholes      2016 Mar     973
+##  4 Potholes      2016 Apr     759
+##  5 Potholes      2016 May     822
+##  6 Potholes      2016 Jun     784
+##  7 Potholes      2016 Jul     604
+##  8 Potholes      2016 Aug     556
+##  9 Potholes      2016 Sep     364
+## 10 Potholes      2016 Oct     318
+## # … with 14 more rows</code></pre>
+<pre class="r"><code>df_filtered %&gt;% 
+  group_by(month) %&gt;% 
+  summarize(mean_requests = mean(n)) -&gt; df_filtered_months</code></pre>
+<pre><code>## `summarise()` ungrouping output (override with `.groups` argument)</code></pre>
+<pre class="r"><code>df_filtered_months %&gt;% 
+  ggplot(aes(month, mean_requests)) +
+  geom_col() +
+    labs(title = &quot;Pothole requests to Pittsburgh 311&quot;,
+       x = &quot;&quot;,
+       y = &quot;Mean number of requests&quot;,
+       caption = &quot;Source: Western Pennsylvania Regional Datacenter&quot;) +
+  theme_bw()</code></pre>
+<p><img src="/post/r-311-pothole-workshop-code-for-pittsburgh/index_files/figure-html/unnamed-chunk-46-1.png" width="672" /></p>
+<p>Make a line graph of the number of pothole requests in the dataset by date</p>
+<pre class="r"><code>df %&gt;% 
+  filter(request_type == &quot;Potholes&quot;) %&gt;% 
+  count(date) #group_by and summarize the number of rows per date</code></pre>
+<pre><code>## # A tibble: 983 x 2
+##    date           n
+##    &lt;date&gt;     &lt;int&gt;
+##  1 2015-04-20   119
+##  2 2015-04-21   101
+##  3 2015-04-22   109
+##  4 2015-04-23   102
+##  5 2015-04-24    84
+##  6 2015-04-27    85
+##  7 2015-04-28   101
+##  8 2015-04-29   107
+##  9 2015-04-30    83
+## 10 2015-05-01    66
+## # … with 973 more rows</code></pre>
+<pre class="r"><code>#assign labels to objects to save some typing
+my_title &lt;- &quot;Pothole requests to Pittsburgh 311&quot;
+my_caption &lt;- &quot;Source: Western Pennsylvania Regional Datacenter&quot;
+
+df %&gt;% 
+  filter(request_type == &quot;Potholes&quot;) %&gt;% 
+  count(date) %&gt;% 
+  ggplot(aes(date, n)) +
+  geom_line() + #use a line to graph the data
+  labs(title = my_title, #use the object you created earlier
+       x = &quot;&quot;,
+       y = &quot;Number of requests&quot;,
+       caption = my_caption) + #use the object you created earlier
+  theme_bw(base_size = 18) #base_family modifies the size of the font</code></pre>
+<p><img src="/post/r-311-pothole-workshop-code-for-pittsburgh/index_files/figure-html/unnamed-chunk-48-1.png" width="672" /></p>
+<p>Note that ggplot2 automatically formats the axis labels for dates</p>
+<p>Graph the data by number of requests per day of the year</p>
+<pre class="r"><code>(df %&gt;% 
+  select(request_type, date) %&gt;% 
+  filter(request_type == &quot;Potholes&quot;) %&gt;% 
+  mutate(year = year(date), #create a year column
+         yday = yday(date)) %&gt;% #create a day of the year column
+  count(year, yday) -&gt; df_day_of_year)  </code></pre>
+<pre><code>## # A tibble: 983 x 3
+##     year  yday     n
+##    &lt;dbl&gt; &lt;dbl&gt; &lt;int&gt;
+##  1  2015   110   119
+##  2  2015   111   101
+##  3  2015   112   109
+##  4  2015   113   102
+##  5  2015   114    84
+##  6  2015   117    85
+##  7  2015   118   101
+##  8  2015   119   107
+##  9  2015   120    83
+## 10  2015   121    66
+## # … with 973 more rows</code></pre>
+<pre class="r"><code>df_day_of_year %&gt;% 
+  ggplot(aes(yday, n, group = year)) + #color the lines by year. as.factor() turns the year column from integer to factor, which has an inherent order
+  geom_line() + 
+  labs(title = my_title,
+       x = &quot;Day of the year&quot;,
+       y = &quot;Number of requests&quot;,
+       caption = my_caption) +
+  theme_bw(base_size = 18)</code></pre>
+<p><img src="/post/r-311-pothole-workshop-code-for-pittsburgh/index_files/figure-html/unnamed-chunk-50-1.png" width="672" /></p>
+<p>That plotted a line for each year, but there is no way to tell which line corresponds with which year</p>
+<p>Color the lines by the year</p>
+<pre class="r"><code>df_day_of_year %&gt;% 
+  ggplot(aes(yday, n, color = as.factor(year))) + #color the lines by year. #as.factor() turns the year column from integer to factor (ordinal string)
+  geom_line() + 
+  labs(title = my_title,
+       x = &quot;Day of the year&quot;,
+       y = &quot;Number of requests&quot;,
+       caption = my_caption) +
+  theme_bw(base_size = 18)</code></pre>
+<p><img src="/post/r-311-pothole-workshop-code-for-pittsburgh/index_files/figure-html/unnamed-chunk-51-1.png" width="672" /></p>
+<p>Graph the cumulative sum of pothole requests per year</p>
+<pre class="r"><code>(df %&gt;% 
+  select(request_type, date) %&gt;% 
+  filter(request_type == &quot;Potholes&quot;) %&gt;% 
+  mutate(year = year(date),
+         yday = yday(date)) %&gt;% 
+  arrange(date) %&gt;% #always arrange your data for cumulative sums
+  group_by(year, yday) %&gt;%
+  summarize(n = n()) %&gt;% 
+  ungroup() %&gt;% #ungroup () resets whatever grouping you had before
+  group_by(year) %&gt;% 
+  mutate(cumsum = cumsum(n)) -&gt; df_cumulative_sum) #calculate the cumulative sum per year</code></pre>
+<pre><code>## `summarise()` regrouping output by &#39;year&#39; (override with `.groups` argument)</code></pre>
+<pre><code>## # A tibble: 983 x 4
+## # Groups:   year [4]
+##     year  yday     n cumsum
+##    &lt;dbl&gt; &lt;dbl&gt; &lt;int&gt;  &lt;int&gt;
+##  1  2015   110   119    119
+##  2  2015   111   101    220
+##  3  2015   112   109    329
+##  4  2015   113   102    431
+##  5  2015   114    84    515
+##  6  2015   117    85    600
+##  7  2015   118   101    701
+##  8  2015   119   107    808
+##  9  2015   120    83    891
+## 10  2015   121    66    957
+## # … with 973 more rows</code></pre>
+<pre class="r"><code>df_cumulative_sum %&gt;% 
+  ggplot(aes(yday, cumsum, color = as.factor(year))) +
+  geom_line(size = 2) +
+  labs(title = my_title,
+       x = &quot;Day of the year&quot;,
+       y = &quot;Cumulative sum of requests&quot;,
+       caption = my_caption) +
+  scale_color_discrete(&quot;Year&quot;) +
+  theme_bw(base_size = 18)</code></pre>
+<p><img src="/post/r-311-pothole-workshop-code-for-pittsburgh/index_files/figure-html/unnamed-chunk-53-1.png" width="672" /></p>
+</div>
+<div id="making-an-area-chart" class="section level2">
+<h2>Making an area chart</h2>
+<p>Since 2015 and 2018 have incomplete data, filter them out</p>
+<pre class="r"><code>df %&gt;% 
+  count(request_type, sort = TRUE) %&gt;% 
+  top_n(5) %&gt;% #select the top 5 request types
+  ungroup() -&gt; df_top_requests</code></pre>
+<pre class="r"><code>df %&gt;% 
+  filter(date &gt;= &quot;2016-01-01&quot;, #only select the rows where the date is after 2016-01-01 and before 2018-01-1
+         date &lt;= &quot;2018-01-01&quot;) %&gt;% 
+  semi_join(df_top_requests) %&gt;% #joins are ways to combine two dataframes
+  count(request_type, month) %&gt;% 
+  ggplot(aes(month, n, group = request_type, fill = request_type)) +
+  geom_area() +
+  scale_fill_discrete(&quot;Request type&quot;) + #change the name of the color legend
+  scale_y_continuous(expand = c(0, 0)) + #remove the padding around the edges
+  scale_x_discrete(expand = c(0, 0)) +
+  labs(title = &quot;Top 5 types of 311 requests in Pittsburgh&quot;,
+       subtitle = &quot;2016 to 2017&quot;,
+       x = &quot;&quot;,
+       y = &quot;Number of requests&quot;,
+       caption = my_caption) +
+  theme_bw(base_size = 18) +
+  theme(panel.grid = element_blank()) #remove the gridlines fom the plot</code></pre>
+<p><img src="/post/r-311-pothole-workshop-code-for-pittsburgh/index_files/figure-html/area_chart-1.png" width="672" /></p>
+</div>
+<div id="faceting" class="section level2">
+<h2>Faceting</h2>
+<p>Facets allow you to split a chart by a variable</p>
+<p>Where do pothole requests come from?</p>
+<pre class="r"><code>df %&gt;% 
+  count(request_origin, sort = TRUE)</code></pre>
+<pre><code>## # A tibble: 10 x 2
+##    request_origin          n
+##    &lt;chr&gt;               &lt;int&gt;
+##  1 Call Center        143716
+##  2 Website             41106
+##  3 Control Panel       26144
+##  4 Report2Gov iOS       6272
+##  5 Twitter              4425
+##  6 Report2Gov Android   2371
+##  7 Text Message         1086
+##  8 Report2Gov Website     42
+##  9 Email                  22
+## 10 QAlert Mobile iOS       5</code></pre>
+<p>Make a line chart for the number of requests per day</p>
+<p>Use facets to distinguish where the request came from</p>
+<pre class="r"><code>df %&gt;% 
+  select(date, request_type, request_origin) %&gt;% 
+  filter(request_type == &quot;Potholes&quot;) %&gt;% 
+  count(date, request_type, request_origin) %&gt;% 
+  ggplot(aes(x = date, y = n)) +
+    geom_line() +
+    facet_wrap(~request_origin) + #facet by request_origin
+    labs(title = my_title,
+         subtitle = &quot;By Request Origin&quot;,
+         x = &quot;&quot;,
+         y = &quot;Number of requests&quot;,
+         caption = my_caption) +
+    theme_bw(base_size = 18)</code></pre>
+<p><img src="/post/r-311-pothole-workshop-code-for-pittsburgh/index_files/figure-html/unnamed-chunk-55-1.png" width="672" /></p>
+</div>
+<div id="mapping" class="section level2">
+<h2>Mapping</h2>
+<p>Load the ggmap package, which works with ggplot2</p>
+<pre class="r"><code>library(ggmap)</code></pre>
+<pre><code>## Google&#39;s Terms of Service: https://cloud.google.com/maps-platform/terms/.</code></pre>
+<pre><code>## Please cite ggmap if you use it! See citation(&quot;ggmap&quot;) for details.</code></pre>
+<p>Select the request_type, x, and y columns. x and y are longitude and latitude</p>
+<pre class="r"><code>(df %&gt;% 
+  select(request_type, x, y) %&gt;% 
+  filter(!is.na(x), !is.na(y),
+         request_type == &quot;Potholes&quot;) -&gt; df_map) #remove missing x and y values</code></pre>
+<pre><code>## # A tibble: 31,735 x 3
+##    request_type     x     y
+##    &lt;chr&gt;        &lt;dbl&gt; &lt;dbl&gt;
+##  1 Potholes     -79.9  40.5
+##  2 Potholes     -79.9  40.5
+##  3 Potholes     -79.9  40.5
+##  4 Potholes     -79.9  40.5
+##  5 Potholes     -79.9  40.5
+##  6 Potholes     -80.0  40.4
+##  7 Potholes     -79.9  40.5
+##  8 Potholes     -79.9  40.5
+##  9 Potholes     -79.9  40.5
+## 10 Potholes     -79.9  40.5
+## # … with 31,725 more rows</code></pre>
+<pre class="r"><code>pgh_coords &lt;- c(lon = -79.9, lat = 40.4)
+
+city_map &lt;- get_googlemap(pgh_coords, zoom = 11)</code></pre>
+<pre><code>## Source : https://maps.googleapis.com/maps/api/staticmap?center=40.4,-79.9&amp;zoom=11&amp;size=640x640&amp;scale=2&amp;maptype=terrain&amp;key=xxx</code></pre>
+<pre class="r"><code>(city_map &lt;- ggmap(city_map))</code></pre>
+<p><img src="/post/r-311-pothole-workshop-code-for-pittsburgh/index_files/figure-html/unnamed-chunk-57-1.png" width="672" /></p>
+<p>Put the data on the map</p>
+<pre class="r"><code>city_map +
+  geom_point(data = df_map, aes(x, y, color = request_type)) #graph the data with dots</code></pre>
+<p><img src="/post/r-311-pothole-workshop-code-for-pittsburgh/index_files/figure-html/unnamed-chunk-58-1.png" width="672" /></p>
+<p>There is too much data on the graph. Make the dots more transparent to show density</p>
+<pre class="r"><code>city_map +
+  geom_point(data = df_map, aes(x, y, color = request_type), alpha = .1) #graph the data with dots</code></pre>
+<p><img src="/post/r-311-pothole-workshop-code-for-pittsburgh/index_files/figure-html/unnamed-chunk-59-1.png" width="672" /></p>
+<p>Still not great</p>
+<p>Density plots are better for showing overplotted data</p>
+<pre class="r"><code>#Put the data on the map
+city_map +
+  stat_density_2d(data = df_map, #Using a 2d density contour
+                  aes(x, #longitude
+                      y, #latitude,
+                      fill = request_type,
+                      alpha = ..level..), #Use alpha so you can see the map under the data
+                  geom = &quot;polygon&quot;) + #We want the contour in a polygon
+  scale_alpha_continuous(range = c(.1, 1)) + #manually set the range for the alpha
+  guides(alpha = guide_legend(&quot;Number of requests&quot;),
+         fill = FALSE) +
+  labs(title = &quot;Pothole requests in Pittsburgh&quot;,
+       subtitle = &quot;311 data&quot;,
+       x = &quot;&quot;,
+       y = &quot;&quot;,
+       caption = my_caption) +
+  theme_bw(base_size = 18) +
+  theme(axis.text = element_blank())</code></pre>
+<p><img src="/post/r-311-pothole-workshop-code-for-pittsburgh/index_files/figure-html/unnamed-chunk-60-1.png" width="672" /></p>
+</div>
+</div>
