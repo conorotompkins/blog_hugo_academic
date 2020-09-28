@@ -30,8 +30,10 @@ projects: []
 
 
 
-<p>This map shows the commuter patterns in the <a href="https://en.wikipedia.org/wiki/Northeast_megalopolis">Northeast Megalopolis/Acela Corridor/BosWash metro area</a>. I pulled the data from the <a href="https://lehd.ces.census.gov/data/">Census Longitudinal Employer-Household Dynamics (LODES)</a> system via the <code>{lehdr}</code> package. The map was created through the <a href="https://flowmap.blue/">Flowmap.blue</a> tool, which makes interactive maps of movement between areas. Flowmap.blue also exposes a bunch of cool features, like animating and clustering connections, among others.
+<p>This map shows the commuter patterns in the <a href="https://en.wikipedia.org/wiki/Northeast_megalopolis">Northeast Megalopolis/Acela Corridor/BosWash metro area</a>. I pulled the data from the <a href="https://lehd.ces.census.gov/data/">Census Longitudinal Employer-Household Dynamics (LODES)</a> system via the <code>{lehdr}</code> package. The map was created through the <a href="https://flowmap.blue/">Flowmap.blue</a> tool, which makes interactive maps of movement between areas. Flowmap.blue also exposes a bunch of cool features, like animating and clustering connections, among others. You can view a full version of the map <a href="https://flowmap.blue/1lxe0FRjCu5FG2SVbX5m1vDMfVAXzS0i_bnwxxPNuCX8?v=41.620996,-75.378680,4.93,0,0&amp;a=0&amp;as=1&amp;b=1&amp;bo=75&amp;c=1&amp;ca=1&amp;d=1&amp;fe=1&amp;lt=1&amp;lfm=ALL&amp;col=interpolateViridis&amp;f=50">here</a>.
 <iframe src="https://flowmap.blue/1lxe0FRjCu5FG2SVbX5m1vDMfVAXzS0i_bnwxxPNuCX8?v=41.620996,-75.378680,4.93,0,0&a=0&as=1&b=1&bo=75&c=1&ca=1&d=1&fe=1&lt=1&lfm=ALL&col=interpolateViridis&f=50" width=1000 height=800"></iframe></p>
+<div id="code" class="section level2">
+<h2>Code</h2>
 <p>This code is what I used to query the LODES data and aggregate it. First, load the required libraries.</p>
 <pre class="r"><code>library(tidyverse)
 library(tidycensus)
@@ -171,3 +173,4 @@ ss &lt;- gs4_create(&quot;lodes_flowmapblue&quot;, sheets = list(properties = pr
 <p>The final step is to allow the Google Sheet to be read by anyone with the link, and copy the Sheet’s link to <a href="https://flowmap.blue/">Flowmap.blue</a></p>
 <pre class="r"><code>knitr::include_graphics(&quot;flowmapblue_sheet_screen.png&quot;)</code></pre>
 <p><img src="flowmapblue_sheet_screen.png" width="1344" /></p>
+</div>

@@ -32,9 +32,10 @@ knitr::opts_chunk$set(echo = TRUE,
                       eval = FALSE,
                       message = FALSE)
 ```
-This map shows the commuter patterns in the [Northeast Megalopolis/Acela Corridor/BosWash metro area](https://en.wikipedia.org/wiki/Northeast_megalopolis). I pulled the data from the [Census Longitudinal Employer-Household Dynamics (LODES)](https://lehd.ces.census.gov/data/) system via the `{lehdr}` package. The map was created through the [Flowmap.blue](https://flowmap.blue/) tool, which makes interactive maps of movement between areas. Flowmap.blue also exposes a bunch of cool features, like animating and clustering connections, among others.
+This map shows the commuter patterns in the [Northeast Megalopolis/Acela Corridor/BosWash metro area](https://en.wikipedia.org/wiki/Northeast_megalopolis). I pulled the data from the [Census Longitudinal Employer-Household Dynamics (LODES)](https://lehd.ces.census.gov/data/) system via the `{lehdr}` package. The map was created through the [Flowmap.blue](https://flowmap.blue/) tool, which makes interactive maps of movement between areas. Flowmap.blue also exposes a bunch of cool features, like animating and clustering connections, among others. You can view a full version of the map [here](https://flowmap.blue/1lxe0FRjCu5FG2SVbX5m1vDMfVAXzS0i_bnwxxPNuCX8?v=41.620996,-75.378680,4.93,0,0&a=0&as=1&b=1&bo=75&c=1&ca=1&d=1&fe=1&lt=1&lfm=ALL&col=interpolateViridis&f=50).
 <iframe src="https://flowmap.blue/1lxe0FRjCu5FG2SVbX5m1vDMfVAXzS0i_bnwxxPNuCX8?v=41.620996,-75.378680,4.93,0,0&a=0&as=1&b=1&bo=75&c=1&ca=1&d=1&fe=1&lt=1&lfm=ALL&col=interpolateViridis&f=50" width=1000 height=800"></iframe>
 
+## Code
 This code is what I used to query the LODES data and aggregate it. First, load the required libraries.
 ```{r eval=TRUE}
 library(tidyverse)
