@@ -1,0 +1,411 @@
+---
+# Documentation: https://sourcethemes.com/academic/docs/managing-content/
+
+title: "Analyzing major commuter routes in Allegheny County"
+subtitle: ""
+summary: ""
+authors: [Conor Tompkins]
+tags: [R, Allegheny County, Commuters, Census, Mapbox]
+categories: [R, Allegheny County, Commuters, Census, Mapbox]
+date: 2020-10-25
+lastmod: 2020-10-25
+featured: false
+draft: TRUE
+
+# Featured image
+# To use, add an image named `featured.jpg/png` to your page's folder.
+# Focal points: Smart, Center, TopLeft, Top, TopRight, Left, Right, BottomLeft, Bottom, BottomRight.
+image:
+  caption: ""
+  focal_point: ""
+  preview_only: false
+
+# Projects (optional).
+#   Associate this post with one or more of your projects.
+#   Simply enter your project's folder or file name without extension.
+#   E.g. `projects = ["internal-project"]` references `content/project/deep-learning/index.md`.
+#   Otherwise, set `projects = []`.
+projects: []
+---
+
+<script src="/rmarkdown-libs/header-attrs/header-attrs.js"></script>
+
+
+<div id="intro" class="section level2">
+<h2>Intro</h2>
+<p>In this post I will use the Mapbox API to calculate metrics for major commuter routes in Allegheny County. The API will provide the distance and duration of the trip, as well as turn-by-turn directions. The route duration should be considered a “minimum duration” because it does not consider traffic. Then I will estimate the duration of the trips with a linear model and compare that to the actual duration from the Mapbox API. I will use the difference between the actual and estimated duration to identify neighborhoods that experience longer or shorter commutes than expected.</p>
+<pre class="r"><code>library(tidyverse)
+library(tidymodels)
+library(mapboxapi)
+library(tidycensus)
+library(janitor)
+library(lehdr)
+library(tigris)
+library(sf)
+library(hrbrthemes)
+
+options(tigris_use_cache = TRUE,
+        scipen = 999,
+        digits = 4)
+
+theme_set(theme_ipsum())</code></pre>
+</div>
+<div id="gather-data" class="section level2">
+<h2>Gather data</h2>
+<p>The first step is to download the census tract shapefiles for the county:</p>
+<pre class="r"><code>#get tracts
+allegheny_county_tracts &lt;- tracts(state = &quot;PA&quot;, county = &quot;Allegheny&quot;, cb = TRUE) %&gt;% 
+  select(GEOID)
+
+st_erase &lt;- function(x, y) {
+  st_difference(x, st_union(y))
+}
+
+ac_water &lt;- area_water(&quot;PA&quot;, &quot;Allegheny&quot;, class = &quot;sf&quot;)
+
+allegheny_county_tracts &lt;- st_erase(allegheny_county_tracts, ac_water)</code></pre>
+<p>Then I download the <a href="https://lehd.ces.census.gov/data/">“Origin-Destination” LODES</a> file from the Census for Pennsylvania in 2017 and subset it to commuters within Allegheny County.</p>
+<pre class="r"><code>#load od tract-level data
+lodes_od_ac_main &lt;- grab_lodes(state = &quot;pa&quot;, year = 2017, 
+                               lodes_type = &quot;od&quot;, job_type = &quot;JT00&quot;, 
+                               segment = &quot;S000&quot;, state_part = &quot;main&quot;, 
+                               agg_geo = &quot;tract&quot;) %&gt;%
+  select(state, w_tract, h_tract, S000, year) %&gt;% 
+  rename(commuters = S000) %&gt;% 
+  mutate(intra_tract_commute = h_tract == w_tract) %&gt;% 
+  semi_join(allegheny_county_tracts, by = c(&quot;w_tract&quot; = &quot;GEOID&quot;)) %&gt;% 
+  semi_join(allegheny_county_tracts, by = c(&quot;h_tract&quot; = &quot;GEOID&quot;))</code></pre>
+<p>This analysis only considers routes where the commuter changed census tracts. 96% of commuters in Allegheny County change census tracts.</p>
+<pre class="r"><code>lodes_od_ac_main %&gt;% 
+  group_by(intra_tract_commute) %&gt;% 
+  summarize(commuters = sum(commuters)) %&gt;% 
+  ungroup() %&gt;% 
+  mutate(pct = commuters / sum(commuters))</code></pre>
+<pre><code>## # A tibble: 2 x 3
+##   intra_tract_commute commuters    pct
+##   &lt;lgl&gt;                   &lt;dbl&gt;  &lt;dbl&gt;
+## 1 FALSE                  460256 0.961 
+## 2 TRUE                    18750 0.0391</code></pre>
+</div>
+<div id="get-directions" class="section level2">
+<h2>Get directions</h2>
+<p>This is the code that identifies the center of each tract, geocodes those centroids to get an address, and gets the turn-by-turn directions and route data for each pair of home and work addresses. I will focus on the top 20% of these routes (in terms of cumulative percent of commuters) because the Mapbox API is not designed for the size of query I would need to get directions for all combinations of census tracts.</p>
+<p>Note that I manually replaced the geocoded address for the Wexford area because the geocoder was returning a result outside of the county, probably because the center of the tract is directly on I-76 (Pennsylvania Turnpike).</p>
+<pre class="r"><code>#filter out rows where commuter doesn&#39;t change tracts
+combined_tract_sf &lt;- lodes_od_ac_main %&gt;%
+  arrange(desc(commuters)) %&gt;% 
+  filter(w_tract != h_tract)
+
+#calculate cumulative pct of commuters, keep only top 20%
+combined_tract_sf_small &lt;- combined_tract_sf %&gt;% 
+  select(h_tract, w_tract, commuters) %&gt;% 
+  arrange(desc(commuters)) %&gt;% 
+  mutate(id = row_number(),
+         pct_commuters = commuters / sum(commuters),
+         cumulative_pct_commuters = cumsum(pct_commuters)) %&gt;%
+  filter(cumulative_pct_commuters &lt; .2) %&gt;%
+  select(h_tract, w_tract, commuters)
+
+#add census centroid geometry
+combined_tract_sf_small &lt;- combined_tract_sf_small %&gt;% 
+  left_join(st_centroid(allegheny_county_tracts), by = c(&quot;h_tract&quot; = &quot;GEOID&quot;)) %&gt;% 
+  rename(h_tract_geo = geometry) %&gt;% 
+  left_join(st_centroid(allegheny_county_tracts), by = c(&quot;w_tract&quot; = &quot;GEOID&quot;)) %&gt;% 
+  rename(w_tract_geo = geometry) %&gt;% 
+  select(h_tract, h_tract_geo, w_tract, w_tract_geo, commuters)
+
+#get addresses for tract centroids
+tract_od_directions &lt;- combined_tract_sf_small %&gt;%
+  mutate(home_address = map_chr(h_tract_geo, mb_reverse_geocode),
+         work_address = map_chr(w_tract_geo, mb_reverse_geocode))
+
+#replace bad address with good address
+wexford_good_address &lt;- &quot;3321 Wexford Rd, Gibsonia, PA 15044&quot;
+
+tract_od_directions &lt;- tract_od_directions %&gt;% 
+  mutate(home_address = case_when(h_tract == &quot;42003409000&quot; ~ wexford_good_address,
+                                  h_tract != &quot;42003409000&quot; ~ home_address),
+         work_address = case_when(w_tract == &quot;42003409000&quot; ~ wexford_good_address,
+                                  w_tract != &quot;42003409000&quot; ~ work_address))
+
+#define error-safe mb_directions function
+mb_directions_possibly &lt;- possibly(mb_directions, otherwise = NA)
+
+#geocode addresses, get directions
+tract_od_directions &lt;- tract_od_directions %&gt;% 
+  mutate(home_address_location_geocoded = map(home_address, mb_geocode),
+         work_address_location_geocoded = map(work_address, mb_geocode)) %&gt;% 
+  mutate(directions = map2(home_address, work_address, ~ mb_directions_possibly(origin = .x,
+                                                                       destination = .y,
+                                                                       steps = TRUE,
+                                                                       profile = &quot;driving&quot;))) %&gt;% 
+  select(h_tract, h_tract_geo, home_address, home_address_location_geocoded,
+         w_tract, w_tract_geo, work_address, work_address_location_geocoded,
+         directions, commuters)</code></pre>
+<p>The core of the above code is combining <code>map2</code> and <code>mb_directions_possibly</code>. This maps the <code>mb_directions_possibly</code> function against two inputs (the home address and work address).</p>
+<p>The result is a dataframe with a row per turn-by-turn direction for each commuter route.</p>
+<pre class="r"><code>tract_od_directions %&gt;% 
+  select(h_tract, w_tract, instructions, distance, duration, commuters) %&gt;% 
+  st_drop_geometry() %&gt;% 
+  as_tibble()</code></pre>
+<pre><code>## # A tibble: 8,450 x 6
+##    h_tract   w_tract  instructions                   distance duration commuters
+##    &lt;chr&gt;     &lt;chr&gt;    &lt;chr&gt;                             &lt;dbl&gt;    &lt;dbl&gt;     &lt;dbl&gt;
+##  1 42003409… 4200302… Drive west.                      0.0339    0.264       619
+##  2 42003409… 4200302… Turn left.                       0.173     0.965       619
+##  3 42003409… 4200302… Turn right onto Wexford Road/…   8.50     10.7         619
+##  4 42003409… 4200302… Turn left to take the PA 910 …   0.636     0.949       619
+##  5 42003409… 4200302… Merge left onto I 79 South.      2.44      1.62        619
+##  6 42003409… 4200302… Keep left to take I 279 South…  18.2      10.9         619
+##  7 42003409… 4200302… Keep right to take I 579 Sout…   1.55      1.14        619
+##  8 42003409… 4200302… Take the exit toward 6th Aven…   0.571     0.408       619
+##  9 42003409… 4200302… Keep left toward 6th Avenue.     0.154     0.159       619
+## 10 42003409… 4200302… Merge left onto Bigelow Boule…   0.068     0.231       619
+## # … with 8,440 more rows</code></pre>
+<p>This summarizes the data so there is one row per commuter route and creates summarized route data.</p>
+<pre class="r"><code>#summarize direction data
+tract_od_stats &lt;- tract_od_directions %&gt;% 
+  unnest(directions) %&gt;%
+  group_by(h_tract, home_address, w_tract, work_address) %&gt;%
+  summarize(duration = sum(duration),
+            distance = sum(distance),
+            steps = n(),
+            commuters = unique(commuters)) %&gt;% 
+  ungroup()</code></pre>
+<p>As expected, route duration and distance are highly correlated. The median duration of a trip is 16.7 minutes.</p>
+<pre class="r"><code>#graph od stats
+tract_od_stats %&gt;% 
+  ggplot(aes(distance, duration, size = commuters)) +
+  geom_point(alpha = .3) +
+  geom_abline(linetype = 2, color = &quot;red&quot;) +
+  coord_equal() +
+  theme_ipsum() +
+  labs(title = &quot;Commutes between census tracts&quot;,
+       subtitle = &quot;Allegheny County, PA&quot;,
+       x = &quot;Distance in KM&quot;,
+       y = &quot;Duration in minutes&quot;,
+       size = &quot;Commuters&quot;)</code></pre>
+<p><img src="/post/ac-driving-commuter-routes/index_files/figure-html/unnamed-chunk-9-1.png" width="672" /></p>
+<pre class="r"><code>median_duration &lt;- tract_od_stats %&gt;% 
+  uncount(weights = commuters) %&gt;% 
+  summarize(median_duration = median(duration)) %&gt;% 
+  pull(median_duration)
+
+tract_od_stats %&gt;% 
+  uncount(weights = commuters) %&gt;% 
+  ggplot(aes(duration)) +
+  geom_density(fill = &quot;grey&quot;) +
+  geom_vline(xintercept = median_duration, lty = 2, color = &quot;red&quot;) +
+  annotate(&quot;text&quot;, x = 21, y = .05, label = &quot;median&quot;, color = &quot;red&quot;) +
+  theme_ipsum() +
+  labs(title = &quot;Trip duration&quot;,
+       x = &quot;Duration in minutes&quot;,
+       y = &quot;Density of observations&quot;)</code></pre>
+<p><img src="/post/ac-driving-commuter-routes/index_files/figure-html/unnamed-chunk-10-1.png" width="672" /></p>
+<p>This map shows the main roads that commuter routes use I-376, I-279, and Route 28 are major arteries, as expected.</p>
+<pre class="r"><code>#map routes
+tract_od_stats %&gt;% 
+  ggplot() +
+  geom_sf(data = allegheny_county_tracts, size = .1, fill = &quot;black&quot;) +
+  geom_sf(aes(alpha = commuters, size = commuters), color = &quot;#ffcc01&quot;, alpha = .02) +
+  guides(size = guide_legend(override.aes= list(alpha = 1))) +
+  scale_size_continuous(range = c(.3, 4)) +
+  theme_void() +
+  labs(title = &quot;Commuter routes between Allegheny County census tracts&quot;,
+       subtitle = &quot;Driving routes&quot;,
+       size = &quot;Commuters&quot;)</code></pre>
+<p><img src="/post/ac-driving-commuter-routes/index_files/figure-html/unnamed-chunk-11-1.png" width="672" /></p>
+<p>A high-resolution image of this map is available <a href="https://raw.githubusercontent.com/conorotompkins/lodes/master/output/commute_path_road_map.png">here</a>. An animation of the routes is <a href="https://raw.githubusercontent.com/conorotompkins/lodes/master/output/animated_route_steps.gif">here</a>.</p>
+<p>People that live closer to downtown Pittsburgh have shorter commutes, on average.</p>
+<pre class="r"><code>allegheny_county_tracts %&gt;% 
+  st_drop_geometry() %&gt;% 
+  left_join(tract_od_stats %&gt;% 
+              select(h_tract, w_tract, duration) %&gt;% 
+              pivot_longer(contains(&quot;tract&quot;)) %&gt;% 
+              group_by(name, value) %&gt;% 
+              summarize(avg_duration = mean(duration)) %&gt;% 
+              ungroup(),
+            by = c(&quot;GEOID&quot; = &quot;value&quot;)) %&gt;% 
+  complete(GEOID, name) %&gt;% 
+  filter(!is.na(name)) %&gt;% 
+  left_join(allegheny_county_tracts) %&gt;%
+  mutate(name = case_when(name == &quot;h_tract&quot; ~ &quot;Origin tract&quot;,
+                          name == &quot;w_tract&quot; ~ &quot;Destination tract&quot;),
+         name = as.factor(name) %&gt;% fct_rev()) %&gt;% 
+  st_sf() %&gt;% 
+  ggplot() +
+  geom_sf(aes(fill = avg_duration), size = .1) +
+  facet_wrap(~name, ncol = 1) +
+  scale_fill_viridis_c(na.value = &quot;grey90&quot;) +
+  labs(title = &quot;Average commute duration&quot;,
+       fill = &quot;Minutes&quot;) +
+  theme_void()</code></pre>
+<p><img src="/post/ac-driving-commuter-routes/index_files/figure-html/unnamed-chunk-12-1.png" width="672" /></p>
+</div>
+<div id="model" class="section level2">
+<h2>Model</h2>
+<p>The next step is to create a model that estimates the duration of a given commute. I will use the number of steps in the turn-by-turn directions and the distance as predictors. Additionally, I will calculate which rivers a commute route crosses and use those as logical variables in the model.</p>
+<p>This collects the geometry for the main rivers in the county.</p>
+<pre class="r"><code>main_rivers &lt;- ac_water %&gt;% 
+  group_by(FULLNAME) %&gt;% 
+  summarize(AWATER = sum(AWATER)) %&gt;% 
+  arrange(desc(AWATER)) %&gt;% 
+  slice(1:4)</code></pre>
+<p>This code calculates whether a given commuter route crosses a river.</p>
+<pre class="r"><code>tract_od_stats_rivers &lt;- tract_od_stats %&gt;% 
+  mutate(intersects_ohio = st_intersects(., main_rivers %&gt;% 
+                                           filter(FULLNAME == &quot;Ohio Riv&quot;)) %&gt;% as.logical(),
+         intersects_allegheny = st_intersects(., main_rivers %&gt;% 
+                                                filter(FULLNAME == &quot;Allegheny Riv&quot;)) %&gt;% as.logical(),
+         intersects_monongahela = st_intersects(., main_rivers %&gt;% 
+                                                  filter(FULLNAME == &quot;Monongahela Riv&quot;)) %&gt;% as.logical(),
+         intersects_youghiogheny = st_intersects(., main_rivers %&gt;% 
+                                                   filter(FULLNAME == &quot;Youghiogheny Riv&quot;)) %&gt;% as.logical()) %&gt;% 
+  replace_na(list(intersects_ohio = FALSE,
+                  intersects_allegheny = FALSE,
+                  intersects_monongahela = FALSE,
+                  intersects_youghiogheny = FALSE)) %&gt;% 
+  st_drop_geometry()
+
+glimpse(tract_od_stats_rivers)</code></pre>
+<pre><code>## Rows: 709
+## Columns: 12
+## $ h_tract                 &lt;chr&gt; &quot;42003010300&quot;, &quot;42003020100&quot;, &quot;42003020100&quot;, …
+## $ home_address            &lt;chr&gt; &quot;1400 Locust Street, Pittsburgh, Pennsylvania…
+## $ w_tract                 &lt;chr&gt; &quot;42003020100&quot;, &quot;42003040200&quot;, &quot;42003982200&quot;, …
+## $ work_address            &lt;chr&gt; &quot;Piatt Place, 301 5th Ave, Pittsburgh, Pennsy…
+## $ duration                &lt;dbl&gt; 6.939, 9.275, 12.943, 8.551, 6.729, 9.528, 2.…
+## $ distance                &lt;dbl&gt; 2.5773, 4.5330, 5.8670, 2.5988, 1.6500, 3.416…
+## $ steps                   &lt;int&gt; 10, 11, 9, 6, 5, 4, 4, 9, 7, 10, 8, 10, 12, 8…
+## $ commuters               &lt;dbl&gt; 63, 64, 70, 112, 155, 73, 81, 134, 87, 124, 1…
+## $ intersects_ohio         &lt;lgl&gt; FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, FAL…
+## $ intersects_allegheny    &lt;lgl&gt; FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, FAL…
+## $ intersects_monongahela  &lt;lgl&gt; FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, FAL…
+## $ intersects_youghiogheny &lt;lgl&gt; FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, FAL…</code></pre>
+<pre class="r"><code>tract_od_stats_rivers &lt;- tract_od_stats_rivers %&gt;% 
+  mutate(od_id = str_c(&quot;h_tract: &quot;, h_tract, &quot;, &quot;, &quot;w_tract: &quot;, w_tract, sep = &quot;&quot;))</code></pre>
+<p>First I set the seed and split the data into training and testing sets.</p>
+<pre class="r"><code>set.seed(1234)
+
+#split data
+splits &lt;- initial_split(tract_od_stats_rivers, prop = .75)
+
+training_data &lt;- training(splits)
+testing_data &lt;- testing(splits)</code></pre>
+<p>Then I use <code>{tidymodels}</code> to define a linear model, cross-validate it, and extract the coefficients.</p>
+<pre class="r"><code>#recipe
+model_recipe &lt;- recipe(duration ~ ., 
+                       data = training_data) %&gt;% 
+  update_role(od_id, new_role = &quot;id&quot;) %&gt;%
+  step_rm(h_tract, home_address, w_tract, work_address, commuters) %&gt;% 
+  step_normalize(distance, steps) %&gt;% 
+  step_zv(all_predictors())
+
+model_recipe %&gt;% 
+  prep() %&gt;% 
+  summary()</code></pre>
+<pre><code>## # A tibble: 7 x 4
+##   variable               type    role      source  
+##   &lt;chr&gt;                  &lt;chr&gt;   &lt;chr&gt;     &lt;chr&gt;   
+## 1 distance               numeric predictor original
+## 2 steps                  numeric predictor original
+## 3 intersects_ohio        logical predictor original
+## 4 intersects_allegheny   logical predictor original
+## 5 intersects_monongahela logical predictor original
+## 6 od_id                  nominal id        original
+## 7 duration               numeric outcome   original</code></pre>
+<pre class="r"><code>model_recipe_prep &lt;- model_recipe %&gt;% 
+  prep()</code></pre>
+<pre class="r"><code>#apply cv to training data
+training_vfold &lt;- vfold_cv(training_data, v = 10, repeats = 2)</code></pre>
+<pre class="r"><code>#model specification
+lm_model &lt;- linear_reg(mode = &quot;regression&quot;) %&gt;% 
+  set_engine(&quot;lm&quot;)
+
+#linear regression workflow
+lm_workflow &lt;- workflow() %&gt;% 
+  add_recipe(model_recipe) %&gt;% 
+  add_model(lm_model)
+
+#fit against training resamples
+keep_pred &lt;- control_resamples(save_pred = TRUE)
+
+lm_training_fit &lt;- lm_workflow %&gt;% 
+  fit_resamples(training_vfold, control = keep_pred) %&gt;% 
+  mutate(model = &quot;lm&quot;)
+
+#get results from training cv
+lm_training_fit %&gt;% 
+  collect_metrics()</code></pre>
+<pre><code>## # A tibble: 2 x 6
+##   model .metric .estimator  mean     n std_err
+##   &lt;chr&gt; &lt;chr&gt;   &lt;chr&gt;      &lt;dbl&gt; &lt;int&gt;   &lt;dbl&gt;
+## 1 lm    rmse    standard   3.22     20 0.0691 
+## 2 lm    rsq     standard   0.822    20 0.00730</code></pre>
+<p>The model averaged an R-squared of .82 on the training data, which is pretty good.</p>
+<p>The predictions from the training set fit the actual duration pretty well.</p>
+<pre class="r"><code>#graph predictions from assessment sets
+lm_training_fit %&gt;% 
+  collect_predictions() %&gt;% 
+  ggplot(aes(duration, .pred)) +
+  geom_point(alpha = .3) +
+  geom_abline(linetype = 2, color = &quot;red&quot;) +
+  coord_equal() +
+  labs(x = &quot;Actual duration&quot;,
+       y = &quot;Predicted duration&quot;)</code></pre>
+<p><img src="/post/ac-driving-commuter-routes/index_files/figure-html/unnamed-chunk-19-1.png" width="672" /></p>
+<p>Next I fit the model against the test data to extract the coefficients. Holding the other variables constant, distance is by far the most influential variable in the model. For every kilometer increase in distance, the duration of the commute can be expected to increase by around 5 minutes. Crossing the Monongahela will add around 2 minutes to a commute, while crossing the Allegheny and Ohio actually decrease commute times. This is probably related to the bridge that the commuter uses.</p>
+<pre class="r"><code>#variable importance
+lm_workflow %&gt;% 
+  fit(testing_data) %&gt;% 
+  pull_workflow_fit() %&gt;% 
+  tidy() %&gt;% 
+  filter(term != &quot;(Intercept)&quot;) %&gt;% 
+  mutate(term = fct_reorder(term, estimate)) %&gt;% 
+  ggplot(aes(estimate, term)) +
+  geom_col(fill = &quot;grey&quot;, color = &quot;black&quot;)</code></pre>
+<p><img src="/post/ac-driving-commuter-routes/index_files/figure-html/unnamed-chunk-20-1.png" width="672" /></p>
+<p>This fits the model to the full dataset and plots the predicted duration against the actual duration. The fit is tighter than just plotting distance vs. duration.</p>
+<pre class="r"><code>#final model
+tract_od_pred &lt;- lm_workflow %&gt;% 
+  fit(testing_data) %&gt;% 
+  predict(tract_od_stats_rivers) %&gt;% 
+  bind_cols(tract_od_stats_rivers) %&gt;% 
+  select(h_tract, w_tract, distance, steps, duration, .pred, commuters)
+
+tract_od_pred %&gt;% 
+  ggplot(aes(duration, .pred, size = commuters)) +
+  geom_point(alpha = .3) +
+  geom_abline(lty = 2, color = &quot;red&quot;) +
+  coord_equal() +
+  labs(x = &quot;Duration in minutes&quot;,
+       y = &quot;Predicted duration&quot;,
+       size = &quot;Number of commuters&quot;)</code></pre>
+<p><img src="/post/ac-driving-commuter-routes/index_files/figure-html/unnamed-chunk-21-1.png" width="672" /></p>
+<p>This calculates how far off the model’s estimation of duration was for each census tract in the dataset (origin and destination). Commuters originating from neighborhoods between State Route 51 and the Monongahela River experience longer than expected commutes.</p>
+<pre class="r"><code>allegheny_county_tracts %&gt;% 
+  st_drop_geometry() %&gt;% 
+  left_join(tract_od_pred %&gt;% 
+              mutate(.resid = duration - .pred) %&gt;% 
+              select(h_tract, w_tract, .resid) %&gt;% 
+              pivot_longer(contains(&quot;tract&quot;)) %&gt;% 
+              group_by(name, value) %&gt;% 
+              summarize(avg_resid = mean(.resid)) %&gt;% 
+              ungroup(),
+            by = c(&quot;GEOID&quot; = &quot;value&quot;)) %&gt;% 
+  complete(GEOID, name) %&gt;% 
+  filter(!is.na(name)) %&gt;% 
+  left_join(allegheny_county_tracts) %&gt;%
+  mutate(name = case_when(name == &quot;h_tract&quot; ~ &quot;Origin tract&quot;,
+                          name == &quot;w_tract&quot; ~ &quot;Destination tract&quot;),
+         name = as.factor(name) %&gt;% fct_rev()) %&gt;% 
+  st_sf() %&gt;% 
+  ggplot() +
+  geom_sf(aes(fill = avg_resid), size = .1) +
+  facet_wrap(~name, ncol = 1) +
+  scale_fill_viridis_c(na.value = &quot;grey90&quot;) +
+  labs(title = &quot;Commute duration above/below expected&quot;,
+       fill = &quot;Minutes&quot;) +
+  theme_void()</code></pre>
+<p><img src="/post/ac-driving-commuter-routes/index_files/figure-html/unnamed-chunk-22-1.png" width="672" /></p>
+</div>
