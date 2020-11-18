@@ -1,0 +1,393 @@
+---
+# Documentation: https://sourcethemes.com/academic/docs/managing-content/
+
+title: "Shifting political winds"
+subtitle: "Or, drawing arrows on maps"
+summary: ""
+authors: [Conor Tompkins]
+tags: [R, Politics, Geometry]
+categories: [R, Politics, Geometry]
+date: 2020-11-13T15:18:35-05:00
+lastmod: 2020-11-13T15:18:35-05:00
+featured: false
+draft: false
+
+# Featured image
+# To use, add an image named `featured.jpg/png` to your page's folder.
+# Focal points: Smart, Center, TopLeft, Top, TopRight, Left, Right, BottomLeft, Bottom, BottomRight.
+image:
+  caption: ""
+  focal_point: ""
+  preview_only: false
+
+# Projects (optional).
+#   Associate this post with one or more of your projects.
+#   Simply enter your project's folder or file name without extension.
+#   E.g. `projects = ["internal-project"]` references `content/project/deep-learning/index.md`.
+#   Otherwise, set `projects = []`.
+projects: []
+---
+
+<script src="index_files/header-attrs/header-attrs.js"></script>
+<link href="index_files/anchor-sections/anchor-sections.css" rel="stylesheet" />
+<script src="index_files/anchor-sections/anchor-sections.js"></script>
+
+
+<p>The purpose of this post is to recreate the “Shift from 2016” arrow map that the New York Times used to show which counties became more Democratic or Republican-leaning from 2016 to 2020. This is a screenshot of the <a href="https://www.nytimes.com/interactive/2020/11/03/us/elections/results-president.html?name=styln-transition&amp;region=TOP_BANNER&amp;block=storyline_menu_recirc&amp;action=click&amp;pgtype=LegacyCollection&amp;impression_id=fe1cabd0-2862-11eb-a601-c3124439c207&amp;variant=show">NYTimes figure</a>:</p>
+<pre class="r"><code>knitr::include_graphics(&quot;nytimes_figure.png&quot;)</code></pre>
+<p><img src="nytimes_figure.png" width="894" /></p>
+<p>I will use county-level Presidential election data from the <a href="https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/VOQCHQ">MIT Election Data + Science Lab</a> to recreate the chart. Since 2020 results are not final yet, I will focus on data from 2000-2016. I ran into multiple issues with the dataset, which I explain in the Code section below. The most signifcant issue was with the data from Alaska, which I excluded from the charts below because of problems with the data.</p>
+<div id="recreating-the-nytimes-figure" class="section level2">
+<h2>Recreating the NYTimes Figure</h2>
+<p>My approach is to use <code>{ggplot2}</code> and <code>{sf}</code> to map the data and draw arrows at angles to display shifts in the Democratic margin.</p>
+<p>This is the dataframe I use to make the final map. It contains the year, state, county, FIPS code, county and state geometries, and election results per county.</p>
+<pre class="r"><code>glimpse(shift_map)</code></pre>
+<pre><code>## Rows: 12,611
+## Columns: 20
+## $ year                          &lt;dbl&gt; 2004, 2008, 2012, 2016, 2004, 2008, 201…
+## $ state                         &lt;chr&gt; &quot;Alabama&quot;, &quot;Alabama&quot;, &quot;Alabama&quot;, &quot;Alaba…
+## $ county                        &lt;chr&gt; &quot;Autauga&quot;, &quot;Autauga&quot;, &quot;Autauga&quot;, &quot;Autau…
+## $ fips                          &lt;chr&gt; &quot;01001&quot;, &quot;01001&quot;, &quot;01001&quot;, &quot;01001&quot;, &quot;01…
+## $ candidatevotes_sum_democrat   &lt;dbl&gt; 4758, 6093, 6363, 5936, 15599, 19386, 1…
+## $ candidatevotes_sum_republican &lt;dbl&gt; 15196, 17403, 17379, 18172, 52971, 6127…
+## $ pct_vote_democrat             &lt;dbl&gt; 0.23845, 0.25932, 0.26801, 0.24623, 0.2…
+## $ pct_vote_republican           &lt;dbl&gt; 0.7616, 0.7407, 0.7320, 0.7538, 0.7725,…
+## $ dem_margin_pct                &lt;dbl&gt; -0.52310, -0.48136, -0.46399, -0.50755,…
+## $ dem_margin_votes              &lt;dbl&gt; -10438, -11310, -11016, -12236, -37372,…
+## $ shift_pct                     &lt;dbl&gt; -0.106746, 0.041745, 0.017371, -0.04356…
+## $ shift_votes                   &lt;dbl&gt; -3387, -872, 294, -1220, -10497, -4513,…
+## $ shift_pct_scaled              &lt;dbl&gt; 71.83, 91.08, 87.92, 80.02, 78.51, 89.0…
+## $ shift_votes_scaled            &lt;dbl&gt; 16602, 11700, 10573, 12378, 30460, 1879…
+## $ geometry                      &lt;MULTIPOLYGON [m]&gt; MULTIPOLYGON (((1269841 -1…
+## $ center                        &lt;list&gt; [POINT (1253837 -1285138), POINT (1253…
+## $ lng0                          &lt;dbl&gt; 1253837, 1253837, 1253837, 1253837, 117…
+## $ lat0                          &lt;dbl&gt; -1285138, -1285138, -1285138, -1285138,…
+## $ lng1                          &lt;dbl&gt; 1259015, 1253616, 1254221, 1255982, 118…
+## $ lat1                          &lt;dbl&gt; -1269365, -1273441, -1274572, -1272948,…</code></pre>
+<pre class="r"><code>shift_map_filtered &lt;- shift_map %&gt;% 
+  filter(state != &quot;Alaska&quot;) %&gt;%
+  filter(year == 2016) %&gt;% 
+  mutate(shift_pct_binary = case_when(sign(shift_pct) == 1 ~ &quot;Democratic&quot;,
+                                      sign(shift_pct) == -1 ~ &quot;Republican&quot;),
+         shift_pct_binary = as.factor(shift_pct_binary)) %&gt;% 
+  mutate(shift_votes_binned = abs(shift_votes) &lt;= 3000)
+
+ggplot() +
+  geom_sf(data = filter(state_geo, !str_detect(NAME, &quot;Alaska&quot;)),
+          size = .2,
+          fill = NA) +
+  geom_point(data = filter(shift_map_filtered, abs(shift_votes) &lt;= 1500),
+             aes(x = lng0, y = lat0,
+                 color = shift_pct_binary),
+             size = .75,
+             alpha = .3) +
+  geom_segment(data = filter(shift_map_filtered, abs(shift_votes) &gt; 1500),
+               aes(x = lng0, xend = lng1,
+                   y = lat0, yend = lat1,
+                   color = shift_pct_binary,
+                   size = shift_votes,
+                   alpha = shift_votes_binned),
+               linejoin = &quot;mitre&quot;,
+               arrow = arrow(length = unit(0.08, &quot;inches&quot;))) +
+  scale_color_manual(values = c(&quot;#1375B7&quot;, &quot;#C93135&quot;), guide = guide_legend(title.position = &quot;top&quot;)) +
+  scale_size_continuous(range = c(.001, 2), guide = FALSE) +
+  scale_alpha_manual(values = c(1, .3), guide = FALSE) +
+  labs(color = &quot;Shift in election margin&quot;) +
+  facet_wrap(~year) +
+  theme_void(base_size = 25) +
+  theme(legend.direction = &quot;horizontal&quot;,
+        legend.position = &quot;bottom&quot;)</code></pre>
+<p><img src="index_files/figure-html/unnamed-chunk-4-1.png" width="1440" /></p>
+<p>The starting point of the line is the centroid of the county. The length and width of the lines are scaled to the shift in terms of number of votes. The end point of the line is calculated using the sine and cosine of the margin shift in % (re-scaled to be interpreted as degrees of an angle) multiplied by the margin shift in votes (re-scaled to be interpreted as meters), which is added to the origin point.</p>
+<p>I lower the opacity of the lines in counties where the vote totals did not shift much. I use points instead of lines for counties where there was a very small shift in votes. This prevents overplotting in geographically dense areas with small populations.</p>
+<p>The NYTimes figure treats the shift as a binary variable when it rescales to degrees of the angle. A Democratic shift is about 45 degrees and a Republican shift is about 135 degrees. My figure maintains the continuous nature of the shift in %. I use the range 0-180 in degrees to indicate the shift. 0 degrees indicates a 100% shift towards Democrats, 90 degrees indicates no change, and 180 degrees indicates a 100% shift towards Republicans. The length of the arrow is determined by the shift in raw number of votes.</p>
+<p>This animation shows the shift in Presidential election margin from 2004-2016.</p>
+<pre class="r"><code>political_winds_anim &lt;- shift_map %&gt;% 
+  filter(state != &quot;Alaska&quot;) %&gt;% 
+  mutate(id = str_c(state, county, fips)) %&gt;% 
+  mutate(year = as.integer(year)) %&gt;% 
+  mutate(shift_pct_binary = case_when(sign(shift_pct) == 1 ~ &quot;Democratic&quot;,
+                                      sign(shift_pct) == -1 ~ &quot;Republican&quot;),
+         shift_pct_binary = as.factor(shift_pct_binary)) %&gt;% 
+  mutate(shift_votes_binned = abs(shift_votes) &lt;= 3000) %&gt;% 
+  ggplot() +
+  geom_sf(data = filter(state_geo, NAME != &quot;Alaska&quot;),
+          size = .2,
+          fill = NA) +
+  geom_segment(aes(x = lng0, xend = lng1,
+                   y = lat0, yend = lat1,
+                   color = shift_pct_binary,
+                   size = shift_votes,
+                   alpha = shift_votes_binned,
+                   group = id),
+               linejoin = &quot;mitre&quot;,
+               arrow = arrow(length = unit(0.09, &quot;inches&quot;))) +
+  scale_color_manual(values = c(&quot;#1375B7&quot;, &quot;#C93135&quot;), guide = guide_legend(title.position = &quot;top&quot;)) +
+  scale_size_continuous(range = c(.001, 1.3), guide = FALSE) +
+  scale_alpha_manual(values = c(1, .3), guide = FALSE) +
+  theme_void(base_size = 25) +
+  theme(legend.direction = &quot;horizontal&quot;,
+        legend.position = &quot;bottom&quot;) +
+  transition_states(year) +
+  labs(title = &quot;Shift in Presidential election Democratic margin&quot;,
+       subtitle = &quot;Year: {closest_state}&quot;,
+       color = &quot;Shift in Democratic margin&quot;)
+
+political_winds_anim</code></pre>
+<p><img src="index_files/figure-html/unnamed-chunk-5-1.gif" /><!-- --></p>
+<p>In the animation there is less overplotting, so I do not replace lines with dots for counties where there was a very small shift in votes.</p>
+</div>
+<div id="code" class="section level2">
+<h2>Code</h2>
+<div id="ingest" class="section level3">
+<h3>Ingest</h3>
+<pre class="r"><code>#election shift
+#script to clean data
+
+#data from https://electionlab.mit.edu/data
+
+#fips info
+#https://en.wikipedia.org/wiki/Federal_Information_Processing_Standard_state_code#FIPS_state_codes
+#https://en.wikipedia.org/wiki/List_of_United_States_FIPS_codes_by_county
+#changes https://www.census.gov/programs-surveys/geography/technical-documentation/county-changes.2010.html
+
+#read in data
+data &lt;- read_csv(&quot;data/countypres_2000-2016.csv&quot;,
+                 col_types = cols(
+                   year = col_double(),
+                   state = col_character(),
+                   state_po = col_character(),
+                   county = col_character(),
+                   FIPS = col_character(),
+                   office = col_character(),
+                   candidate = col_character(),
+                   party = col_character(),
+                   candidatevotes = col_double(),
+                   totalvotes = col_double(),
+                   version = col_double()
+                 )) %&gt;% 
+  clean_names()
+
+glimpse(data)</code></pre>
+<pre><code>## Rows: 50,524
+## Columns: 11
+## $ year           &lt;dbl&gt; 2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000, …
+## $ state          &lt;chr&gt; &quot;Alabama&quot;, &quot;Alabama&quot;, &quot;Alabama&quot;, &quot;Alabama&quot;, &quot;Alabama&quot;,…
+## $ state_po       &lt;chr&gt; &quot;AL&quot;, &quot;AL&quot;, &quot;AL&quot;, &quot;AL&quot;, &quot;AL&quot;, &quot;AL&quot;, &quot;AL&quot;, &quot;AL&quot;, &quot;AL&quot;, …
+## $ county         &lt;chr&gt; &quot;Autauga&quot;, &quot;Autauga&quot;, &quot;Autauga&quot;, &quot;Autauga&quot;, &quot;Baldwin&quot;,…
+## $ fips           &lt;chr&gt; &quot;1001&quot;, &quot;1001&quot;, &quot;1001&quot;, &quot;1001&quot;, &quot;1003&quot;, &quot;1003&quot;, &quot;1003&quot;…
+## $ office         &lt;chr&gt; &quot;President&quot;, &quot;President&quot;, &quot;President&quot;, &quot;President&quot;, &quot;P…
+## $ candidate      &lt;chr&gt; &quot;Al Gore&quot;, &quot;George W. Bush&quot;, &quot;Ralph Nader&quot;, &quot;Other&quot;, &quot;…
+## $ party          &lt;chr&gt; &quot;democrat&quot;, &quot;republican&quot;, &quot;green&quot;, NA, &quot;democrat&quot;, &quot;re…
+## $ candidatevotes &lt;dbl&gt; 4942, 11993, 160, 113, 13997, 40872, 1033, 578, 5188, …
+## $ totalvotes     &lt;dbl&gt; 17208, 17208, 17208, 17208, 56480, 56480, 56480, 56480…
+## $ version        &lt;dbl&gt; 20191203, 20191203, 20191203, 20191203, 20191203, 2019…</code></pre>
+</div>
+<div id="clean" class="section level3">
+<h3>Clean</h3>
+<p>This code filters out state-wide vote tabulations and then filters only on the two-party Presidential vote.</p>
+<pre class="r"><code>data &lt;- data %&gt;% 
+  rename(fips_raw = fips) %&gt;% 
+  #filter out state-wide ballot collection
+  filter(!(state == &quot;Connecticut&quot; &amp; county == &quot;Statewide writein&quot;)) %&gt;% 
+  filter(!(state == &quot;Maine&quot; &amp; county == &quot;Maine UOCAVA&quot;)) %&gt;% 
+  filter(!(state == &quot;Rhode Island&quot; &amp; county == &quot;Federal Precinct&quot;))
+
+#filter for only 2-party vote in presidential elections
+data &lt;- data %&gt;% 
+  filter(office == &quot;President&quot;,
+         party == &quot;democrat&quot; | party == &quot;republican&quot;) %&gt;% 
+  arrange(state, county, fips_raw, year) %&gt;% 
+  replace_na(list(candidatevotes = 0))</code></pre>
+<p>Many of the FIPS codes from the source data dropped leading zeroes, which makes them unuseable for joining with Census data. This code adds the leading zeroes back.</p>
+<pre class="r"><code>#clean fips data
+states_with_bad_fips &lt;- str_to_title(c(&quot;ALABAMA&quot;, &quot;ALASKA&quot;, &quot;ARIZONA&quot;, 
+                                      &quot;ARKANSAS&quot;, &quot;CALIFORNIA&quot;,
+                                      &quot;COLORADO&quot;, &quot;CONNECTICUT&quot;))
+data %&gt;% 
+  filter(state %in% states_with_bad_fips) %&gt;% 
+  mutate(fips = paste0(&quot;0&quot;, fips_raw)) %&gt;% 
+  distinct(fips_raw, fips)</code></pre>
+<pre><code>## # A tibble: 328 x 2
+##    fips_raw fips 
+##    &lt;chr&gt;    &lt;chr&gt;
+##  1 1001     01001
+##  2 1003     01003
+##  3 1005     01005
+##  4 1007     01007
+##  5 1009     01009
+##  6 1011     01011
+##  7 1013     01013
+##  8 1015     01015
+##  9 1017     01017
+## 10 1019     01019
+## # … with 318 more rows</code></pre>
+<pre class="r"><code>data &lt;- data %&gt;% 
+  #add &quot;0&quot; to front of states where leading &quot;0&quot; was dropped
+  mutate(fips = case_when(state %in% states_with_bad_fips ~ paste0(&quot;0&quot;, fips_raw),
+                          !(state %in% states_with_bad_fips) ~ fips_raw))</code></pre>
+<p>I had to make a variety of decisions about how to clean up the data with regards to county geometries. The MIT data does not reflect cases where counties changed names or FIPS codes, or where counties merged. This code manually makes the changes necessary to join the data with Census geometry data. Note that I do not attempt to fix the data for Alaska, which was extremely different than the Census data. I was not confident that I could make accurate adjustments in this case, so I excluded Alaska entirely. These changes are not optimal, but I think it is close enough.</p>
+<pre class="r"><code>#decisions to make with wonky geometry
+#merge records for Shannnon and Oglala Lakota counties in SD
+#merge Kansas City Missouri and Jackson County Missouri
+#merge Bedford (city) fips 51515 with Bedford county 51019
+
+data &lt;- data %&gt;% 
+  #update Oglala Lakota SD fips
+  #changed in 2015 https://www.census.gov/programs-surveys/geography/technical-documentation/county-changes.2010.html
+  mutate(fips = case_when(state == &quot;South Dakota&quot; &amp; county == &quot;Oglala Lakota&quot; ~ &quot;46102&quot;,
+                          TRUE ~ fips)) %&gt;% 
+  #merge Kansas City Missouri with Jackson County Missouri
+  mutate(county = case_when(state == &quot;Missouri&quot; &amp; county == &quot;Kansas City&quot; ~ &quot;Jackson&quot;,
+                            TRUE ~ county),
+         fips = case_when(state == &quot;Missouri&quot; &amp; county == &quot;Jackson&quot; ~ &quot;29095&quot;,
+                          TRUE ~ fips)) %&gt;% 
+  #merge Bedford (city) fips 51515 with Bedford county 51019
+  mutate(fips = case_when(state == &quot;Virginia&quot; &amp; county == &quot;Bedford&quot; &amp; fips == &quot;51515&quot; ~ &quot;51019&quot;,
+                          TRUE ~ fips))</code></pre>
+<p>This compares the counties in the MIT data vs. what is in the Census API. Besides Alaska, this shows that my manual changes accounted for the issues I identified.</p>
+<pre class="r"><code>counties &lt;- get_acs(variables = &quot;B19013_001&quot;,
+                      geography = &quot;county&quot;,
+                      geometry = FALSE) %&gt;% 
+  #mutate(census_geo_year = 2010) %&gt;% 
+  select(NAME, GEOID)</code></pre>
+<pre class="r"><code>#alaska falls out: this is expected
+#Broomfield County CO falls out for year 2000: was part of Boulder County in 2000
+#Oglala Lakota County SD falls out for year 2000: was Shannon County in 2000
+#
+data %&gt;% 
+  select(year, state, county, fips) %&gt;% 
+  filter(state != &quot;Alaksa&quot;) %&gt;% 
+  anti_join(counties, by = c(&quot;fips&quot; = &quot;GEOID&quot;)) %&gt;% 
+  count(state)</code></pre>
+<pre><code>## # A tibble: 1 x 2
+##   state      n
+##   &lt;chr&gt;  &lt;int&gt;
+## 1 Alaska   380</code></pre>
+<p>The process of merging some counties meant that I had to summarize the election results to the level of my new “adjusted” counties. This code performs that process.</p>
+<pre class="r"><code>#some counties have 4 records because of merging process
+data %&gt;%
+  select(state, county, fips, year) %&gt;% 
+  add_count(state, county, fips, year) %&gt;% 
+  distinct(n)</code></pre>
+<pre><code>## # A tibble: 2 x 1
+##       n
+##   &lt;int&gt;
+## 1     2
+## 2     4</code></pre>
+<pre class="r"><code>#summarize candidatevotes to account for merged counties
+data %&gt;% 
+  select(state, county, fips, year, office, party, candidate, candidatevotes) %&gt;% 
+  group_by(state, county, fips, year, office, party, candidate) %&gt;% 
+  summarize(candidatevotes_sum = sum(candidatevotes)) %&gt;% 
+  ungroup() %&gt;% 
+  add_count(state, county, fips, year) %&gt;% 
+  #confirm that each county only has 2 records
+  distinct(n)</code></pre>
+<pre><code>## # A tibble: 1 x 1
+##       n
+##   &lt;int&gt;
+## 1     2</code></pre>
+<pre class="r"><code>data &lt;- data %&gt;% 
+  select(state, county, fips, year, office, party, candidate, candidatevotes) %&gt;% 
+  group_by(state, county, fips, year, office, party, candidate) %&gt;% 
+  summarize(candidatevotes_sum = sum(candidatevotes)) %&gt;% 
+  ungroup()</code></pre>
+</div>
+<div id="munge" class="section level3">
+<h3>Munge</h3>
+<p>This part performs the more straightfoward tasks of calculating a candidate’s % of the vote and the election-to-election shift in %.</p>
+<pre class="r"><code>presidential_votes &lt;- data %&gt;% 
+  group_by(year, state, county, fips) %&gt;% 
+  mutate(pct_vote = candidatevotes_sum / sum(candidatevotes_sum)) %&gt;% 
+  ungroup() %&gt;% 
+  select(year, state, county, fips, party, candidatevotes_sum, pct_vote)</code></pre>
+<pre class="r"><code>presidential_votes_shift &lt;- presidential_votes %&gt;% 
+  pivot_wider(names_from = party, values_from = c(candidatevotes_sum, pct_vote)) %&gt;%
+  mutate(dem_margin_pct = pct_vote_democrat - pct_vote_republican,
+         dem_margin_votes = candidatevotes_sum_democrat - candidatevotes_sum_republican) %&gt;% 
+  arrange(state, county, fips, year) %&gt;% 
+  group_by(state, county, fips) %&gt;% 
+  mutate(shift_pct = dem_margin_pct - lag(dem_margin_pct),
+         shift_votes = dem_margin_votes - lag(dem_margin_votes)) %&gt;% 
+  filter(row_number() &gt; 1) %&gt;% 
+  ungroup()</code></pre>
+<p>Finally, this creates new variables that rescale the shift in % and votes to degrees and meters, respectively. I also create variations of <code>shift_pct</code> and <code>shift_votes</code> to use in the graph.</p>
+<pre class="r"><code>presidential_votes_shift &lt;- presidential_votes_shift %&gt;% 
+  mutate(shift_pct_scaled = rescale(shift_pct, to = c(0, 180)), #republican 0, democrat 180
+         shift_votes_scaled = rescale(abs(shift_votes), to = c(10^4, 10^6))) %&gt;% 
+  mutate(shift_pct_binary = case_when(sign(shift_pct) == 1 ~ &quot;Democratic&quot;,
+                                      sign(shift_pct) == -1 ~ &quot;Republican&quot;),
+         shift_pct_binary = as.factor(shift_pct_binary)) %&gt;% 
+  mutate(shift_votes_binned = abs(shift_votes) &lt;= 3000)</code></pre>
+<pre class="r"><code>#create shift map object
+shift_map &lt;- presidential_votes_shift %&gt;% 
+  left_join(county_geo, by = c(&quot;fips&quot; = &quot;GEOID&quot;)) %&gt;% 
+  st_sf() %&gt;% 
+  rename(lng0 = center_lon_x,
+         lat0 = center_lat_y) %&gt;% 
+  mutate(lng1 = lng0 + (shift_votes_scaled * cos(NISTdegTOradian(shift_pct_scaled))),
+         lat1 = lat0 + (shift_votes_scaled * sin(NISTdegTOradian(shift_pct_scaled))))</code></pre>
+<pre class="r"><code>shift_map_filtered &lt;- shift_map %&gt;% 
+  filter(state != &quot;Alaska&quot;) %&gt;%
+  filter(year == 2016) %&gt;% 
+  mutate(shift_pct_binary = case_when(sign(shift_pct) == 1 ~ &quot;Democratic&quot;,
+                                      sign(shift_pct) == -1 ~ &quot;Republican&quot;),
+         shift_pct_binary = as.factor(shift_pct_binary))
+
+ggplot() +
+  geom_sf(data = filter(state_geo, !str_detect(NAME, &quot;Alaska&quot;)),
+          size = .2,
+          fill = NA) +
+  geom_point(data = filter(shift_map_filtered, abs(shift_votes) &lt;= 1500),
+             aes(x = lng0, y = lat0,
+                 color = shift_pct_binary),
+             size = .75,
+             alpha = .3) +
+  geom_segment(data = filter(shift_map_filtered, abs(shift_votes) &gt; 1500),
+               aes(x = lng0, xend = lng1,
+                   y = lat0, yend = lat1,
+                   color = shift_pct_binary,
+                   size = shift_votes,
+                   alpha = shift_votes_binned),
+               linejoin = &quot;mitre&quot;,
+               arrow = arrow(length = unit(0.08, &quot;inches&quot;))) +
+  scale_color_manual(values = c(&quot;#1375B7&quot;, &quot;#C93135&quot;), guide = guide_legend(title.position = &quot;top&quot;)) +
+  scale_size_continuous(range = c(.001, 2), guide = FALSE) +
+  scale_alpha_manual(values = c(1, .3), guide = FALSE) +
+  labs(color = &quot;Shift in election margin&quot;) +
+  facet_wrap(~year) +
+  theme_void(base_size = 25) +
+  theme(legend.direction = &quot;horizontal&quot;,
+        legend.position = &quot;bottom&quot;)</code></pre>
+<pre class="r"><code>political_winds_anim &lt;- shift_map %&gt;% 
+  filter(state != &quot;Alaska&quot;) %&gt;% 
+  mutate(id = str_c(state, county, fips)) %&gt;% 
+  mutate(year = as.integer(year)) %&gt;% 
+  mutate(shift_votes_binned = abs(shift_votes) &lt;= 3000) %&gt;% 
+  ggplot() +
+  geom_sf(data = filter(state_geo, NAME != &quot;Alaska&quot;),
+          size = .2,
+          fill = NA) +
+  geom_segment(aes(x = lng0, xend = lng1,
+                   y = lat0, yend = lat1,
+                   color = shift_pct_binary,
+                   size = shift_votes,
+                   alpha = shift_votes_binned,
+                   group = id),
+               linejoin = &quot;mitre&quot;,
+               arrow = arrow(length = unit(0.09, &quot;inches&quot;))) +
+  scale_color_manual(values = c(&quot;#1375B7&quot;, &quot;#C93135&quot;), guide = guide_legend(title.position = &quot;top&quot;)) +
+  scale_size_continuous(range = c(.001, 1.3), guide = FALSE) +
+  scale_alpha_manual(values = c(1, .3), guide = FALSE) +
+  theme_void(base_size = 25) +
+  theme(legend.direction = &quot;horizontal&quot;,
+        legend.position = &quot;bottom&quot;) +
+  transition_states(year) +
+  labs(title = &quot;Shift in Presidential election Democratic margin&quot;,
+       subtitle = &quot;Year: {closest_state}&quot;,
+       color = &quot;Shift in Democratic margin&quot;)
+
+political_winds_anim</code></pre>
+</div>
+</div>
