@@ -34,7 +34,6 @@ projects: []
 
 
 <p>The purpose of this post is to recreate the “Shift from 2016” arrow map that the New York Times used to show which counties became more Democratic or Republican-leaning from 2016 to 2020. This is a screenshot of the <a href="https://www.nytimes.com/interactive/2020/11/03/us/elections/results-president.html?name=styln-transition&amp;region=TOP_BANNER&amp;block=storyline_menu_recirc&amp;action=click&amp;pgtype=LegacyCollection&amp;impression_id=fe1cabd0-2862-11eb-a601-c3124439c207&amp;variant=show">NYTimes figure</a>:</p>
-<pre class="r"><code>knitr::include_graphics(&quot;nytimes_figure.png&quot;)</code></pre>
 <p><img src="nytimes_figure.png" width="894" /></p>
 <p>I will use county-level Presidential election data from the <a href="https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/VOQCHQ">MIT Election Data + Science Lab</a> to recreate the chart. Since 2020 results are not final yet, I will focus on data from 2000-2016. I ran into multiple issues with the dataset, which I explain in the Code section below. The most signifcant issue was with the data from Alaska, which I excluded from the charts below because of problems with the data.</p>
 <div id="recreating-the-nytimes-figure" class="section level2">
