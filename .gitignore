@@ -9,5 +9,5 @@ content/post/*/data/
 content/post/data
 
 #ignore automated blogdown folders
-blogdown
+/blogdown
 public
