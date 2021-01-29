@@ -1,9 +1,9 @@
 ---
 # Documentation: https://sourcethemes.com/academic/docs/managing-content/
 
-title: "House Price Estimator"
+title: "House Price Estimator Dashboard"
 subtitle: ""
-summary: ""
+summary: "Use this interactive dashboard to model house prices in Allegheny County, PA"
 authors: [Conor Tompkins]
 tags: []
 categories: []
@@ -27,6 +27,6 @@ image:
 #   Otherwise, set `projects = []`.
 projects: []
 ---
-[Full Dashboard]( https://conorotompkins.shinyapps.io/house_price_estimator/)
+[Click here to view the full dashboard]( https://conorotompkins.shinyapps.io/house_price_estimator/)
 
 <iframe height="800" width="1000" frameborder="yes" src=" https://conorotompkins.shinyapps.io/house_price_estimator/"> </iframe>
