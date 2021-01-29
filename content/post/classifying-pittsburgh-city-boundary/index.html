@@ -3,7 +3,7 @@
 
 title: "Modeling the Pittsburgh City Boundary"
 subtitle: ""
-summary: ""
+summary: "In this post I create a model that differentiates census tracts that are inside and outside the city limits of Pittsburgh"
 authors: [Conor Tompkins]
 tags: [R, Pittsburgh, Allegheny County]
 categories: [R, Pittsburgh, Allegheny County]
@@ -28,6 +28,7 @@ image:
 projects: []
 ---
 
+<script src="{{< blogdown/postref >}}index_files/header-attrs/header-attrs.js"></script>
 
 
 <div id="introduction" class="section level2">
@@ -91,7 +92,7 @@ glimpse(city_tracts)</code></pre>
   geom_sf(aes(fill = type), size = .1) +
   geom_sf(data = pgh_official_boundary, color = &quot;white&quot;, linetype = 2, alpha = 0) +
   theme_void()</code></pre>
-<p><img src="/post/classifying-pittsburgh-city-boundary/index_files/figure-html/unnamed-chunk-3-1.png" width="672" />
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-3-1.png" width="672" />
 This reads in the data I will consider for the model. All the data is from the 2010 Census.</p>
 <pre class="r"><code>all_data &lt;- read_csv(&quot;data/combined_census_data_tract.csv&quot;, col_types = cols(.default = &quot;c&quot;)) %&gt;%
   left_join(city_tracts) %&gt;% 
@@ -270,7 +271,7 @@ combined_res %&gt;%
   ggplot(aes(.estimate, color = model, fill = model)) +
   geom_density(alpha = .5) +
   facet_wrap(~.metric)</code></pre>
-<p><img src="/post/classifying-pittsburgh-city-boundary/index_files/figure-html/unnamed-chunk-13-1.png" width="672" /></p>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-13-1.png" width="672" /></p>
 <p>This graph shows that the random forest model’s false negative and false positive rates are about the same.</p>
 <pre class="r"><code>rf_res %&gt;% 
   collect_predictions() %&gt;% 
@@ -283,7 +284,7 @@ combined_res %&gt;%
   scale_fill_continuous(label = scales::comma) +
   coord_equal() +
   theme(panel.grid.major = element_blank())</code></pre>
-<p><img src="/post/classifying-pittsburgh-city-boundary/index_files/figure-html/unnamed-chunk-14-1.png" width="672" /></p>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-14-1.png" width="672" /></p>
 <p>This fits the random forest model against the entire dataset to extract the variable importance metrics.</p>
 <pre class="r"><code>#variable importance
 var_imp &lt;- rf_workflow %&gt;% 
@@ -295,7 +296,7 @@ var_imp %&gt;%
   mutate(Variable = fct_reorder(Variable, Importance)) %&gt;% 
   ggplot(aes(Importance, Variable)) +
   geom_point()</code></pre>
-<p><img src="/post/classifying-pittsburgh-city-boundary/index_files/figure-html/unnamed-chunk-15-1.png" width="672" /></p>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-15-1.png" width="672" /></p>
 <p>The top 3 variables are the percent of a tract’s population that is White, the percent of housing units that are owned with a loan, and the population density. This matches my subjective model of city vs. non-city characteristics. Areas that are low density with majority White demographics where people own their homes are typically outside of the city. This dynamic is probably connected to the <a href="https://www.wesa.fm/post/pittsburgh-neighborhoods-and-schools-remain-segregated-how-did-it-start#stream/0">history of segregation and redlining</a> in majority African American communities in Pittsburgh.</p>
 <p>Since the random forest model was fit against multiple bootstraps, I have multiple predictions per tract. I stratified the bootstraps by <code>type</code>, so the <code>city</code> and <code>non_city</code> tracts were sampled about the same number of times.</p>
 <pre class="r"><code>#extract probabilities from bootstrap resamples
@@ -310,7 +311,7 @@ full_predictions %&gt;%
   ggplot(aes(n, fill = type, color = type)) +
   geom_density(alpha = .3) +
   labs(x = &quot;Number of observations of a tract&quot;)</code></pre>
-<p><img src="/post/classifying-pittsburgh-city-boundary/index_files/figure-html/unnamed-chunk-16-1.png" width="672" /></p>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-16-1.png" width="672" /></p>
 <p>I am not solely interested in the top-line accuracy of the model. Since the city border is a geographic phenomenon, there may be interesting patterns in the geographic distribution of the model’s predictions that can be shown on a map.</p>
 <p>To map the data, I calculate the following metrics per tract:</p>
 <ul>
@@ -344,7 +345,7 @@ glimpse(full_predictions_pct)</code></pre>
   scale_fill_viridis_c(labels = scales::percent) +
   labs(fill = &quot;% predictions correct&quot;) +
   theme_void()</code></pre>
-<p><img src="/post/classifying-pittsburgh-city-boundary/index_files/figure-html/unnamed-chunk-18-1.png" width="672" /></p>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-18-1.png" width="672" /></p>
 <p>This shows the average % that the model classified a tract as being in the city. The model was very confident that Oakland, Shadyside, and Squirrel Hill are in the city. The model also thought that many communities to the east and communities along the Monongahela River are in the city, specifically McKeesport and West Mifflin.</p>
 <pre class="r"><code>tracts %&gt;% 
   left_join(full_predictions_pct) %&gt;% 
@@ -355,7 +356,7 @@ glimpse(full_predictions_pct)</code></pre>
   scale_fill_viridis_c(labels = scales::percent) +
   labs(fill = &quot;Average city classification %&quot;) +
   theme_void()</code></pre>
-<p><img src="/post/classifying-pittsburgh-city-boundary/index_files/figure-html/unnamed-chunk-19-1.png" width="672" />
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-19-1.png" width="672" />
 To review, I think it would be difficult to create a model that almost perfectly captures the current city border, which is a result of political decisions, court cases, and other non-deterministic phenomena. In addition, white flight and the relative expansion of the suburbs during the collapse of the steel industry reshaped the Pittsburgh metro area. City borders are defined by people and politicians, not a clustering algorithm based on Census data (although that would be interesting). My experience is that many people that don’t technically live within the border consider themselves to be Pittsburghers. So what is a border, anyways?</p>
 </div>
 </div>
