@@ -3,13 +3,13 @@
 
 title: "Pittsburgh City Boundary Model Leaflet Map"
 subtitle: ""
-summary: ""
+summary: "View this classification model that distinguishes between census tracts that are inside or outside the City of Pittsburgh"
 authors: [Conor Tompkins]
 tags: [R, Pittsburgh, Allegheny County]
 categories: [R, Pittsburgh, Allegheny County]
 date: 2020-08-23T13:50:21-04:00
 lastmod: 2020-08-23T13:50:21-04:00
-featured: false
+featured: true
 draft: false
 
 # Featured image
