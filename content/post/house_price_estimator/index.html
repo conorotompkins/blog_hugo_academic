@@ -34,3 +34,81 @@ projects: []
 <p><a href="https://conorotompkins.shinyapps.io/house_price_estimator/">Click here to view the full dashboard</a></p>
 <iframe height="800" width="1000" frameborder="yes" src=" https://conorotompkins.shinyapps.io/house_price_estimator/">
 </iframe>
+<div id="model-discussion" class="section level1">
+<h1>Model discussion</h1>
+<p>I trained 3 models against the assessment data:</p>
+<ul>
+<li>Linear model</li>
+<li>Random Forest</li>
+<li>Bagged Tree</li>
+</ul>
+<p>I chose the Bagged Tree model because it performed about as well as the Random Forest model, but it predicts against new data much faster. Prediction speed is important because the UI for the dashboard has to update very quickly.</p>
+<p>Total observations: 160,181</p>
+<div id="training-set-metrics-75-of-total-observations" class="section level2">
+<h2>Training set metrics (75% of total observations)</h2>
+<pre class="r"><code>train_metrics %&gt;% 
+  select(model_name, dataset, .metric, .estimate) %&gt;% 
+  pivot_wider(names_from = .metric, values_from = .estimate)</code></pre>
+<pre><code>## # A tibble: 3 x 5
+##   model_name    dataset   rmse   rsq    mae
+##   &lt;chr&gt;         &lt;chr&gt;    &lt;dbl&gt; &lt;dbl&gt;  &lt;dbl&gt;
+## 1 lm            train   77888. 0.739 41805.
+## 2 random forest train   65855. 0.814 36710.
+## 3 bagged tree   train   66457. 0.800 38396.</code></pre>
+<pre class="r"><code>train_metrics %&gt;% 
+  select(model_name, .metric, .estimate) %&gt;% 
+  pivot_wider(names_from = .metric, values_from = .estimate) %&gt;% 
+  ggplot(aes(rmse, rsq, label = model_name)) +
+  geom_label() +
+  scale_x_continuous(label = dollar) +
+  coord_cartesian(xlim = c(65000, 79000)) +
+  labs(x = &quot;Root Mean Squared Error&quot;,
+       y = &quot;R^2&quot;)</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-5-1.png" width="672" /></p>
+</div>
+<div id="test-set-metrics-25-of-total-observations" class="section level2">
+<h2>Test set metrics (25% of total observations)</h2>
+<pre class="r"><code>test_metrics %&gt;% 
+  select(model_name, dataset, .metric, .estimate) %&gt;% 
+  pivot_wider(names_from = .metric, values_from = .estimate)</code></pre>
+<pre><code>## # A tibble: 3 x 5
+##   model_name    dataset   rmse   rsq    mae
+##   &lt;chr&gt;         &lt;chr&gt;    &lt;dbl&gt; &lt;dbl&gt;  &lt;dbl&gt;
+## 1 lm            test    82994. 0.709 42025.
+## 2 random forest test    67518. 0.808 36568.
+## 3 bagged tree   test    68223. 0.793 38220.</code></pre>
+<pre class="r"><code>test_metrics %&gt;% 
+  select(model_name, .metric, .estimate) %&gt;% 
+  pivot_wider(names_from = .metric, values_from = .estimate) %&gt;% 
+  ggplot(aes(rmse, rsq, label = model_name)) +
+  geom_label() +
+  scale_x_continuous(label = dollar) +
+  coord_cartesian(xlim = c(65000, 83000)) +
+  labs(x = &quot;Root Mean Squared Error&quot;,
+       y = &quot;R^2&quot;)</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-8-1.png" width="672" /></p>
+<pre class="r"><code>full_model_results %&gt;% 
+  ggplot(aes(sale_price_adj, 10^.pred)) +
+  geom_density_2d_filled() +
+  geom_abline(lty = 2, color = &quot;white&quot;) +
+  scale_x_log10(label = dollar) +
+  scale_y_log10(label = dollar) +
+  coord_cartesian(xlim = c(30000, 10^6),
+                  ylim = c(30000, 10^6)) +
+  labs(x = &quot;Actual sale price&quot;,
+       y = &quot;Predicted sale price&quot;,
+       fill = &quot;Density of observations&quot;)</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-10-1.png" width="672" /></p>
+</div>
+<div id="variable-importance" class="section level2">
+<h2>Variable Importance</h2>
+<pre class="r"><code>var_imp %&gt;% 
+  mutate(term = fct_reorder(term, value)) %&gt;% 
+  ggplot(aes(value, term)) +
+  geom_point() +
+  scale_x_comma() +
+  labs(x = &quot;Importance&quot;,
+       y = NULL)</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-12-1.png" width="672" /></p>
+</div>
+</div>

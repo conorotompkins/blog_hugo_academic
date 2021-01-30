@@ -27,6 +27,117 @@ image:
 #   Otherwise, set `projects = []`.
 projects: []
 ---
-[Click here to view the full dashboard]( https://conorotompkins.shinyapps.io/house_price_estimator/)
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, 
+                      warning = FALSE, 
+                      message = FALSE)
+```
+```{r include=FALSE}
+library(tidyverse)
+library(tidymodels)
+library(hrbrthemes)
+
+theme_set(theme_ipsum())
+
+options(scipen = 999, digits = 4)
+```
+
+[Click here to view the full dashboard](https://conorotompkins.shinyapps.io/house_price_estimator/)
 
 <iframe height="800" width="1000" frameborder="yes" src=" https://conorotompkins.shinyapps.io/house_price_estimator/"> </iframe>
+
+# Model discussion
+
+I trained 3 models against the assessment data:
+
+* Linear model
+* Random Forest
+* Bagged Tree
+
+I chose the Bagged Tree model because it performed about as well as the Random Forest model, but it predicts against new data much faster. Prediction speed is important because the UI for the dashboard has to update very quickly.
+
+```{r include=FALSE}
+total_records <- read_csv("data/bag_full_model_results.csv") %>% 
+  nrow()
+```
+
+Total observations: `r comma(total_records)`
+
+## Training set metrics (75% of total observations)
+```{r include=FALSE}
+train_metrics <- read_csv("data/train_metrics.csv")
+```
+
+```{r}
+train_metrics %>% 
+  select(model_name, dataset, .metric, .estimate) %>% 
+  pivot_wider(names_from = .metric, values_from = .estimate)
+```
+
+```{r}
+train_metrics %>% 
+  select(model_name, .metric, .estimate) %>% 
+  pivot_wider(names_from = .metric, values_from = .estimate) %>% 
+  ggplot(aes(rmse, rsq, label = model_name)) +
+  geom_label() +
+  scale_x_continuous(label = dollar) +
+  coord_cartesian(xlim = c(65000, 79000)) +
+  labs(x = "Root Mean Squared Error",
+       y = "R^2")
+```
+
+## Test set metrics (25% of total observations)
+```{r include=FALSE}
+test_metrics <- read_csv("data/test_metrics.csv")
+```
+
+```{r}
+test_metrics %>% 
+  select(model_name, dataset, .metric, .estimate) %>% 
+  pivot_wider(names_from = .metric, values_from = .estimate)
+```
+
+```{r}
+test_metrics %>% 
+  select(model_name, .metric, .estimate) %>% 
+  pivot_wider(names_from = .metric, values_from = .estimate) %>% 
+  ggplot(aes(rmse, rsq, label = model_name)) +
+  geom_label() +
+  scale_x_continuous(label = dollar) +
+  coord_cartesian(xlim = c(65000, 83000)) +
+  labs(x = "Root Mean Squared Error",
+       y = "R^2")
+```
+
+```{r include=FALSE}
+full_model_results <- read_csv("data/bag_full_model_results.csv")
+```
+
+```{r}
+full_model_results %>% 
+  ggplot(aes(sale_price_adj, 10^.pred)) +
+  geom_density_2d_filled() +
+  geom_abline(lty = 2, color = "white") +
+  scale_x_log10(label = dollar) +
+  scale_y_log10(label = dollar) +
+  coord_cartesian(xlim = c(30000, 10^6),
+                  ylim = c(30000, 10^6)) +
+  labs(x = "Actual sale price",
+       y = "Predicted sale price",
+       fill = "Density of observations")
+```
+
+## Variable Importance
+```{r include=FALSE}
+var_imp <- read_csv("data/bagged_tree_variable_importance.csv")
+```
+
+```{r fig.height=14}
+var_imp %>% 
+  mutate(term = fct_reorder(term, value)) %>% 
+  ggplot(aes(value, term)) +
+  geom_point() +
+  scale_x_comma() +
+  labs(x = "Importance",
+       y = NULL)
+```
