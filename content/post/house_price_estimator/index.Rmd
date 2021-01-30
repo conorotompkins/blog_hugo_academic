@@ -113,6 +113,8 @@ test_metrics %>%
 full_model_results <- read_csv("data/bag_full_model_results.csv")
 ```
 
+## Observed vs. Predicted (full dataset)
+
 ```{r}
 full_model_results %>% 
   ggplot(aes(sale_price_adj, 10^.pred)) +
@@ -124,6 +126,7 @@ full_model_results %>%
                   ylim = c(30000, 10^6)) +
   labs(x = "Actual sale price",
        y = "Predicted sale price",
+       title = "Observed vs. Predicted sale price",
        fill = "Density of observations")
 ```
 

@@ -87,6 +87,9 @@ projects: []
   labs(x = &quot;Root Mean Squared Error&quot;,
        y = &quot;R^2&quot;)</code></pre>
 <p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-8-1.png" width="672" /></p>
+</div>
+<div id="observed-vs.-predicted-full-dataset" class="section level2">
+<h2>Observed vs. Predicted (full dataset)</h2>
 <pre class="r"><code>full_model_results %&gt;% 
   ggplot(aes(sale_price_adj, 10^.pred)) +
   geom_density_2d_filled() +
@@ -97,6 +100,7 @@ projects: []
                   ylim = c(30000, 10^6)) +
   labs(x = &quot;Actual sale price&quot;,
        y = &quot;Predicted sale price&quot;,
+       title = &quot;Observed vs. Predicted sale price&quot;,
        fill = &quot;Density of observations&quot;)</code></pre>
 <p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-10-1.png" width="672" /></p>
 </div>
