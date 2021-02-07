@@ -36,6 +36,7 @@ knitr::opts_chunk$set(echo = TRUE,
 library(tidyverse)
 library(tidymodels)
 library(hrbrthemes)
+library(sf)
 
 theme_set(theme_ipsum())
 
@@ -68,20 +69,15 @@ Total observations: `r comma(total_records)`
 train_metrics <- read_csv("data/train_metrics.csv")
 ```
 
+I used 10-fold cross-validation to assess model performance against the training set:
 ```{r}
 train_metrics %>% 
-  select(model_name, dataset, .metric, .estimate) %>% 
-  pivot_wider(names_from = .metric, values_from = .estimate)
-```
-
-```{r}
-train_metrics %>% 
-  select(model_name, .metric, .estimate) %>% 
+  select(model_name, id, .metric, .estimate) %>% 
   pivot_wider(names_from = .metric, values_from = .estimate) %>% 
-  ggplot(aes(rmse, rsq, label = model_name)) +
-  geom_label() +
+  ggplot(aes(rmse, rsq, color = model_name)) +
+  geom_point() +
   scale_x_continuous(label = dollar) +
-  coord_cartesian(xlim = c(65000, 79000)) +
+  #coord_cartesian(xlim = c(65000, 79000)) +
   labs(x = "Root Mean Squared Error",
        y = "R^2")
 ```
@@ -93,20 +89,7 @@ test_metrics <- read_csv("data/test_metrics.csv")
 
 ```{r}
 test_metrics %>% 
-  select(model_name, dataset, .metric, .estimate) %>% 
-  pivot_wider(names_from = .metric, values_from = .estimate)
-```
-
-```{r}
-test_metrics %>% 
-  select(model_name, .metric, .estimate) %>% 
-  pivot_wider(names_from = .metric, values_from = .estimate) %>% 
-  ggplot(aes(rmse, rsq, label = model_name)) +
-  geom_label() +
-  scale_x_continuous(label = dollar) +
-  coord_cartesian(xlim = c(65000, 83000)) +
-  labs(x = "Root Mean Squared Error",
-       y = "R^2")
+  select(.metric, .estimate)
 ```
 
 ```{r include=FALSE}
@@ -135,7 +118,7 @@ full_model_results %>%
 var_imp <- read_csv("data/bagged_tree_variable_importance.csv")
 ```
 
-```{r fig.height=14}
+```{r fig.height=16}
 var_imp %>% 
   mutate(term = fct_reorder(term, value)) %>% 
   ggplot(aes(value, term)) +
@@ -144,3 +127,25 @@ var_imp %>%
   labs(x = "Importance",
        y = NULL)
 ```
+Model performance by `geo_id`
+
+```{r include = FALSE}
+geo_id_rsq <- full_model_results %>% 
+  group_by(geo_id) %>% 
+  rsq(truth = sale_price_adj, estimate = 10^.pred) %>% 
+  ungroup()
+
+geo_id_shapes <- st_read("data/unified_geo_ids/unified_geo_ids.shp")
+```
+
+```{r}
+geo_id_shapes %>% 
+  left_join(geo_id_rsq) %>% 
+  ggplot() +
+  geom_sf(aes(fill = .estimate)) +
+  scale_fill_viridis_c() +
+  labs(fill = "R-squared") +
+  theme_void()
+```
+
+

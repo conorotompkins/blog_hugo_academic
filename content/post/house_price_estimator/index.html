@@ -46,47 +46,28 @@ projects: []
 <p>Total observations: 160,181</p>
 <div id="training-set-metrics-75-of-total-observations" class="section level2">
 <h2>Training set metrics (75% of total observations)</h2>
+<p>I used 10-fold cross-validation to assess model performance against the training set:</p>
 <pre class="r"><code>train_metrics %&gt;% 
-  select(model_name, dataset, .metric, .estimate) %&gt;% 
-  pivot_wider(names_from = .metric, values_from = .estimate)</code></pre>
-<pre><code>## # A tibble: 3 x 5
-##   model_name    dataset   rmse   rsq    mae
-##   &lt;chr&gt;         &lt;chr&gt;    &lt;dbl&gt; &lt;dbl&gt;  &lt;dbl&gt;
-## 1 lm            train   77888. 0.739 41805.
-## 2 random forest train   65855. 0.814 36710.
-## 3 bagged tree   train   66457. 0.800 38396.</code></pre>
-<pre class="r"><code>train_metrics %&gt;% 
-  select(model_name, .metric, .estimate) %&gt;% 
+  select(model_name, id, .metric, .estimate) %&gt;% 
   pivot_wider(names_from = .metric, values_from = .estimate) %&gt;% 
-  ggplot(aes(rmse, rsq, label = model_name)) +
-  geom_label() +
+  ggplot(aes(rmse, rsq, color = model_name)) +
+  geom_point() +
   scale_x_continuous(label = dollar) +
-  coord_cartesian(xlim = c(65000, 79000)) +
+  #coord_cartesian(xlim = c(65000, 79000)) +
   labs(x = &quot;Root Mean Squared Error&quot;,
        y = &quot;R^2&quot;)</code></pre>
-<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-5-1.png" width="672" /></p>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-4-1.png" width="672" /></p>
 </div>
 <div id="test-set-metrics-25-of-total-observations" class="section level2">
 <h2>Test set metrics (25% of total observations)</h2>
 <pre class="r"><code>test_metrics %&gt;% 
-  select(model_name, dataset, .metric, .estimate) %&gt;% 
-  pivot_wider(names_from = .metric, values_from = .estimate)</code></pre>
-<pre><code>## # A tibble: 3 x 5
-##   model_name    dataset   rmse   rsq    mae
-##   &lt;chr&gt;         &lt;chr&gt;    &lt;dbl&gt; &lt;dbl&gt;  &lt;dbl&gt;
-## 1 lm            test    82994. 0.709 42025.
-## 2 random forest test    67518. 0.808 36568.
-## 3 bagged tree   test    68223. 0.793 38220.</code></pre>
-<pre class="r"><code>test_metrics %&gt;% 
-  select(model_name, .metric, .estimate) %&gt;% 
-  pivot_wider(names_from = .metric, values_from = .estimate) %&gt;% 
-  ggplot(aes(rmse, rsq, label = model_name)) +
-  geom_label() +
-  scale_x_continuous(label = dollar) +
-  coord_cartesian(xlim = c(65000, 83000)) +
-  labs(x = &quot;Root Mean Squared Error&quot;,
-       y = &quot;R^2&quot;)</code></pre>
-<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-8-1.png" width="672" /></p>
+  select(.metric, .estimate)</code></pre>
+<pre><code>## # A tibble: 3 x 2
+##   .metric .estimate
+##   &lt;chr&gt;       &lt;dbl&gt;
+## 1 rmse    63666.   
+## 2 rsq         0.820
+## 3 mape       27.6</code></pre>
 </div>
 <div id="observed-vs.-predicted-full-dataset" class="section level2">
 <h2>Observed vs. Predicted (full dataset)</h2>
@@ -102,7 +83,7 @@ projects: []
        y = &quot;Predicted sale price&quot;,
        title = &quot;Observed vs. Predicted sale price&quot;,
        fill = &quot;Density of observations&quot;)</code></pre>
-<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-10-1.png" width="672" /></p>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-8-1.png" width="672" /></p>
 </div>
 <div id="variable-importance" class="section level2">
 <h2>Variable Importance</h2>
@@ -113,6 +94,15 @@ projects: []
   scale_x_comma() +
   labs(x = &quot;Importance&quot;,
        y = NULL)</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-10-1.png" width="672" />
+Model performance by <code>geo_id</code></p>
+<pre class="r"><code>geo_id_shapes %&gt;% 
+  left_join(geo_id_rsq) %&gt;% 
+  ggplot() +
+  geom_sf(aes(fill = .estimate)) +
+  scale_fill_viridis_c() +
+  labs(fill = &quot;R-squared&quot;) +
+  theme_void()</code></pre>
 <p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-12-1.png" width="672" /></p>
 </div>
 </div>
