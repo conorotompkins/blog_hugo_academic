@@ -1,0 +1,840 @@
+---
+# Documentation: https://sourcethemes.com/academic/docs/managing-content/
+
+title: "Mapping Pittsburgh Commuter Modes"
+subtitle: "Bivariate Discretized Bins"
+summary: ""
+authors: [Conor Tompkins]
+tags: []
+categories: []
+date: 2021-03-18T16:12:51-04:00
+lastmod: 2021-03-18T16:12:51-04:00
+featured: false
+draft: false
+
+# Featured image
+# To use, add an image named `featured.jpg/png` to your page's folder.
+# Focal points: Smart, Center, TopLeft, Top, TopRight, Left, Right, BottomLeft, Bottom, BottomRight.
+image:
+  caption: ""
+  focal_point: ""
+  preview_only: false
+
+# Projects (optional).
+#   Associate this post with one or more of your projects.
+#   Simply enter your project's folder or file name without extension.
+#   E.g. `projects = ["internal-project"]` references `content/project/deep-learning/index.md`.
+#   Otherwise, set `projects = []`.
+projects: []
+---
+
+<script src="{{< blogdown/postref >}}index_files/header-attrs/header-attrs.js"></script>
+<script src="{{< blogdown/postref >}}index_files/kePrint/kePrint.js"></script>
+<link href="{{< blogdown/postref >}}index_files/lightable/lightable.css" rel="stylesheet" />
+
+
+<div id="intro" class="section level3">
+<h3>Intro</h3>
+<p>The clash between public transportation and single passenger vehicles is a heated topic of discussion <a href="https://www.nytimes.com/2020/07/09/opinion/sunday/ban-cars-manhattan-cities.html">nationally</a> and in the <a href="https://www.pghcitypaper.com/pittsburgh/pittsburgh-is-the-7th-least-car-dependent-metro-in-america-study-says/Content?oid=16755873">Pittsburgh area</a>. <a href="https://www.nytimes.com/2021/03/25/climate/buses-trains-ridership-climate-change.html">Public transit ridership has been heavily reduced by COVID-19</a> in many countries. These two commuting modes compete for the same riders, and investment dollars, and space. Car drivers are frustrated when a bus stops during rush hour to pick up passengers, while bus passengers are frustrated sitting in traffic caused by single passenger vehicles because transit doesn’t have right-of-way.</p>
+<p>From my point of view, Pittsburgh’s geography lends itself to a focus on public transit, at the expense of the single passenger vehicle. Most of the jobs in the county are in a single census tract Downtown, which is reflected in the spoke (and no wheel) design of the transit system. Downtown is surrounded by rivers and mountains, which drastically narrows the geography suited to infrastructure. You pretty much have to use a tunnel or bridge to commute Downtown, unless you are coming from directly east. It would make sense to give public transit priority access to those tunnels and bridges, since their throughput is <a href="https://nacto.org/publication/transit-street-design-guide/introduction/why/designing-move-people/">many times higher</a> than roads designated for single passenger vehicles.
+<img src="https://nacto.org/wp-content/uploads/2016/04/Design-to-Move-People_all-e1461361807936.jpg" /><!-- --></p>
+<p>The historical priority towards single passenger vehicles is reflected in the Census statistics about commuting modes in the area. Most people in the area commute to work by themselves in cars. In the Wexford-area census tract, 78% (5,141) of commuters drive to work alone (and sit in traffic on the parkway together). Public transit use is limited to areas where the government invested in transit, but even there transit is not typically the majority mode.</p>
+<p>In this post I will use <code>{tidycensus}</code> to pull data about how many people commute by driving alone or taking public transit Allegheny County. I chose these two modes because they are the two most popular modes in the county, and are the most different in terms of style. I then graph the data with <code>{ggplot2}</code> and <code>{biscale}</code>. I hack the <code>{biscale}</code> legend a bit to get it to show the % of commuters, which may be of interest to other R users.</p>
+</div>
+<div id="code-and-graphs" class="section level3">
+<h3>Code and graphs</h3>
+<p>Load libraries and set up the environment:</p>
+<pre class="r"><code>library(tidyverse)
+library(tidycensus)
+library(sf)
+library(tigris)
+library(janitor)
+library(biscale)
+library(patchwork)
+library(hrbrthemes)
+library(kableExtra)
+
+options(scipen = 999, digits = 4)
+
+theme_set(theme_ipsum(base_size = 25))</code></pre>
+<p>These are the variables about commuter mode that the Census has for the 2019 American Community Survey (ACS):</p>
+<pre class="r"><code>acs1_vars &lt;- load_variables(2019, &#39;acs1&#39;) %&gt;% 
+  mutate(across(c(label, concept), str_to_lower))
+
+acs1_vars %&gt;%
+  filter(str_detect(name, &quot;^B08301_&quot;)) %&gt;% 
+  kbl() %&gt;% 
+  scroll_box(height = &quot;400px&quot;) %&gt;% 
+  kable_styling(bootstrap_options = c(&quot;striped&quot;, &quot;hover&quot;, &quot;condensed&quot;, &quot;responsive&quot;),
+                position = &quot;left&quot;)</code></pre>
+<div class="table table-striped table-hover table-condensed table-responsive" style="border: 1px solid #ddd; padding: 0px; overflow-y: scroll; height:400px;  ">
+<table>
+<thead>
+<tr>
+<th style="text-align:left;position: sticky; top:0; background-color: #FFFFFF;">
+name
+</th>
+<th style="text-align:left;position: sticky; top:0; background-color: #FFFFFF;">
+label
+</th>
+<th style="text-align:left;position: sticky; top:0; background-color: #FFFFFF;">
+concept
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+B08301_001
+</td>
+<td style="text-align:left;">
+estimate!!total:
+</td>
+<td style="text-align:left;">
+means of transportation to work
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+B08301_002
+</td>
+<td style="text-align:left;">
+estimate!!total:!!car, truck, or van:
+</td>
+<td style="text-align:left;">
+means of transportation to work
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+B08301_003
+</td>
+<td style="text-align:left;">
+estimate!!total:!!car, truck, or van:!!drove alone
+</td>
+<td style="text-align:left;">
+means of transportation to work
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+B08301_004
+</td>
+<td style="text-align:left;">
+estimate!!total:!!car, truck, or van:!!carpooled:
+</td>
+<td style="text-align:left;">
+means of transportation to work
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+B08301_005
+</td>
+<td style="text-align:left;">
+estimate!!total:!!car, truck, or van:!!carpooled:!!in 2-person carpool
+</td>
+<td style="text-align:left;">
+means of transportation to work
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+B08301_006
+</td>
+<td style="text-align:left;">
+estimate!!total:!!car, truck, or van:!!carpooled:!!in 3-person carpool
+</td>
+<td style="text-align:left;">
+means of transportation to work
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+B08301_007
+</td>
+<td style="text-align:left;">
+estimate!!total:!!car, truck, or van:!!carpooled:!!in 4-person carpool
+</td>
+<td style="text-align:left;">
+means of transportation to work
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+B08301_008
+</td>
+<td style="text-align:left;">
+estimate!!total:!!car, truck, or van:!!carpooled:!!in 5- or 6-person carpool
+</td>
+<td style="text-align:left;">
+means of transportation to work
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+B08301_009
+</td>
+<td style="text-align:left;">
+estimate!!total:!!car, truck, or van:!!carpooled:!!in 7-or-more-person carpool
+</td>
+<td style="text-align:left;">
+means of transportation to work
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+B08301_010
+</td>
+<td style="text-align:left;">
+estimate!!total:!!public transportation (excluding taxicab):
+</td>
+<td style="text-align:left;">
+means of transportation to work
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+B08301_011
+</td>
+<td style="text-align:left;">
+estimate!!total:!!public transportation (excluding taxicab):!!bus
+</td>
+<td style="text-align:left;">
+means of transportation to work
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+B08301_012
+</td>
+<td style="text-align:left;">
+estimate!!total:!!public transportation (excluding taxicab):!!subway or elevated rail
+</td>
+<td style="text-align:left;">
+means of transportation to work
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+B08301_013
+</td>
+<td style="text-align:left;">
+estimate!!total:!!public transportation (excluding taxicab):!!long-distance train or commuter rail
+</td>
+<td style="text-align:left;">
+means of transportation to work
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+B08301_014
+</td>
+<td style="text-align:left;">
+estimate!!total:!!public transportation (excluding taxicab):!!light rail, streetcar or trolley (carro pãºblico in puerto rico)
+</td>
+<td style="text-align:left;">
+means of transportation to work
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+B08301_015
+</td>
+<td style="text-align:left;">
+estimate!!total:!!public transportation (excluding taxicab):!!ferryboat
+</td>
+<td style="text-align:left;">
+means of transportation to work
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+B08301_016
+</td>
+<td style="text-align:left;">
+estimate!!total:!!taxicab
+</td>
+<td style="text-align:left;">
+means of transportation to work
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+B08301_017
+</td>
+<td style="text-align:left;">
+estimate!!total:!!motorcycle
+</td>
+<td style="text-align:left;">
+means of transportation to work
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+B08301_018
+</td>
+<td style="text-align:left;">
+estimate!!total:!!bicycle
+</td>
+<td style="text-align:left;">
+means of transportation to work
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+B08301_019
+</td>
+<td style="text-align:left;">
+estimate!!total:!!walked
+</td>
+<td style="text-align:left;">
+means of transportation to work
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+B08301_020
+</td>
+<td style="text-align:left;">
+estimate!!total:!!other means
+</td>
+<td style="text-align:left;">
+means of transportation to work
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+B08301_021
+</td>
+<td style="text-align:left;">
+estimate!!total:!!worked from home
+</td>
+<td style="text-align:left;">
+means of transportation to work
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Driving alone in a single-passenger vehicle is by far the dominant commuting mode in the county.</p>
+<pre class="r"><code>all_transit_vars &lt;- c(&quot;B08301_003&quot;, 
+                      &quot;B08301_004&quot;, 
+                      &quot;B08301_010&quot;, 
+                      &quot;B08301_016&quot;, 
+                      &quot;B08301_017&quot;, 
+                      &quot;B08301_018&quot;, 
+                      &quot;B08301_019&quot;, 
+                      &quot;B08301_020&quot;,
+                      &quot;B08301_021&quot;)
+
+all_transit_modes &lt;- get_acs(geography = &quot;county&quot;, 
+                             variables = acs1_vars %&gt;%
+                               filter(name %in% all_transit_vars) %&gt;% 
+                               pull(name, label),
+                             summary_var = &quot;B08301_001&quot;,
+                             year = 2019, state = &quot;PA&quot;, county = &quot;Allegheny&quot;,
+                             geometry = F)
+
+all_transit_modes %&gt;% 
+  mutate(variable = str_remove(variable, &quot;^estimate!!total:&quot;),
+         variable = str_remove(variable, &quot;\\(excluding taxicab\\)&quot;),
+         variable = str_remove_all(variable, &quot;\\!&quot;),
+         variable = str_remove(variable, &quot;:$&quot;),
+         variable = str_replace(variable, &quot;:&quot;, &quot; : &quot;),
+         variable = str_trim(variable),
+         variable = str_to_title(variable)) %&gt;% 
+  group_by(variable) %&gt;% 
+  summarize(estimate = sum(estimate),) %&gt;% 
+  mutate(variable = fct_reorder(variable, estimate),
+         pct = estimate / sum(estimate)) %&gt;% 
+  ggplot(aes(estimate, variable)) +
+  geom_col() +
+  geom_text(aes(x = estimate + 26000, label = scales::percent(pct, 1)),
+            size = 4) +
+  labs(title = &quot;Allegheny County Commuter Modes&quot;,
+       subtitle = &quot;2019 American Community Survey&quot;,
+       x = &quot;Commuters&quot;,
+       y = NULL) +
+  scale_x_comma(limits = c(0, 500000),
+                labels = c(&quot;0&quot;, &quot;1k&quot;, &quot;2k&quot;, &quot;3k&quot;, &quot;4k&quot;, &quot;5k&quot;)) +
+  theme_ipsum(axis_text_size = 15)</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-4-1.png" width="672" /></p>
+<p>I will use these two variables to directly compare the use of single-passenger vehicles and public transit in the county.</p>
+<pre class="r"><code>vars &lt;- c(&quot;Drove alone&quot; = &quot;B08301_003&quot;,
+          &quot;Public transportation&quot; = &quot;B08301_010&quot;)
+
+acs1_vars %&gt;%
+  filter(name %in% vars) %&gt;% 
+  pull(label)</code></pre>
+<pre><code>## [1] &quot;estimate!!total:!!car, truck, or van:!!drove alone&quot;          
+## [2] &quot;estimate!!total:!!public transportation (excluding taxicab):&quot;</code></pre>
+<p>This downloads the commuter mode data and subtracts the rivers from the census tract polygons so it looks nice on a map:</p>
+<pre class="r"><code>st_erase &lt;- function(x, y) {
+  st_difference(x, st_union(st_combine(y)))
+}
+
+rivers &lt;- area_water(&quot;PA&quot;, &quot;Allegheny&quot;, class = &quot;sf&quot;, progress_bar = F) %&gt;% 
+  arrange(desc(AWATER)) %&gt;% 
+  slice(1:3)
+
+tract_transit &lt;- get_acs(geography = &quot;tract&quot;, variables = vars, summary_var = &quot;B08301_001&quot;,
+                         year = 2019, state = &quot;PA&quot;, county = &quot;Allegheny&quot;,
+                         geometry = T) %&gt;% 
+  select(GEOID, variable, estimate, summary_est) %&gt;% 
+  st_erase(rivers)</code></pre>
+<pre class="r"><code>tract_transit %&gt;% 
+  glimpse()</code></pre>
+<pre><code>## Rows: 804
+## Columns: 5
+## $ GEOID       &lt;chr&gt; &quot;42003408002&quot;, &quot;42003408002&quot;, &quot;42003210700&quot;, &quot;42003210700&quot;…
+## $ variable    &lt;chr&gt; &quot;Drove alone&quot;, &quot;Public transportation&quot;, &quot;Drove alone&quot;, &quot;Pu…
+## $ estimate    &lt;dbl&gt; 2815, 8, 589, 189, 566, 146, 1224, 260, 466, 100, 1063, 21…
+## $ summary_est &lt;dbl&gt; 3165, 3165, 1231, 1231, 1110, 1110, 1992, 1992, 702, 702, …
+## $ geometry    &lt;POLYGON [°]&gt; POLYGON ((-79.99 40.63, -79..., POLYGON ((-79.99 4…</code></pre>
+<p>As discussed earlier, public transit is not the majority commuting mode in most areas:</p>
+<pre class="r"><code>tract_transit %&gt;% 
+  st_drop_geometry() %&gt;% 
+  group_by(GEOID) %&gt;%
+  mutate(pct_tract_commuters = estimate / sum(estimate),
+         combined_commuters = sum(estimate)) %&gt;%
+  ungroup() %&gt;%
+  mutate(GEOID = fct_reorder(GEOID, summary_est)) %&gt;%
+  arrange(desc(GEOID), desc(summary_est)) %&gt;% 
+  mutate(is_downtown_label = case_when(GEOID == &quot;42003020100&quot; &amp; variable == &quot;Drove alone&quot; ~ &quot;Downtown*&quot;,
+                                       TRUE ~ NA_character_)) %&gt;% 
+  slice(1:60) %&gt;% 
+  ggplot(aes(estimate, GEOID, fill = variable)) +
+  geom_col(color = &quot;black&quot;) +
+  geom_text(aes(x = estimate + 3000, label = is_downtown_label)) +
+  labs(title = &quot;Top 30 census tracts&quot;,
+       subtitle = &quot;Total commuter population from all modes&quot;,
+       x = &quot;Commuters&quot;,
+       y = &quot;Census tracts&quot;,
+       fill = &quot;Commute mode&quot;) +
+  scale_x_comma() +
+  theme_ipsum(base_size = 15) +
+  theme(axis.text.y = element_blank(),
+        panel.grid.major = element_blank())</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-8-1.png" width="672" />
+*Most commuters that live in Downtown walk to work.</p>
+<p>This shows that in absolute numbers, driving alone swamps public transit across the county.</p>
+<pre class="r"><code>scatter_graph &lt;- tract_transit %&gt;% 
+  st_drop_geometry() %&gt;% 
+  select(GEOID, variable, estimate) %&gt;% 
+  pivot_wider(names_from = variable, values_from = estimate) %&gt;% 
+  clean_names() %&gt;% 
+  ggplot(aes(drove_alone, public_transportation)) +
+  geom_point(alpha = .7, size = 1) +
+  labs(title = &quot;Commuter modes in Allegheny County&quot;,
+       x = &quot;Driving Alone&quot;,
+       y = &quot;Using Public Transportation&quot;) +
+  scale_x_comma() +
+  scale_y_comma() +
+  tune::coord_obs_pred() +
+  theme_ipsum(base_size = 15)
+
+scatter_graph</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-9-1.png" width="672" />
+I made the X and Y axes symmetric to emphasize the difference in scale between the two variables.</p>
+<p>This uses the <code>bi_class</code> function to divide the data into discrete bins based on how many people drive alone vs. use public transit. This turns two continuous variables into one categorical variable. I had to play around with the <code>style</code> argument to find an option that worked for the unbalanced data.</p>
+<pre class="r"><code>transit_bivariate_geo &lt;- tract_transit %&gt;% 
+  st_drop_geometry() %&gt;% 
+  drop_na(estimate) %&gt;% 
+  select(GEOID, variable, estimate) %&gt;% 
+  pivot_wider(names_from = variable, values_from = estimate) %&gt;% 
+  clean_names() %&gt;% 
+  replace_na(list(drove_alone = 0, public_transportation = 0)) %&gt;% 
+  bi_class(x = drove_alone, 
+           y = public_transportation, 
+           style = &quot;fisher&quot;, 
+           dim = 3) %&gt;% 
+  left_join(tract_transit %&gt;% group_by(GEOID) %&gt;% summarize(), 
+            by = c(&quot;geoid&quot; = &quot;GEOID&quot;)) %&gt;% 
+  st_sf()
+
+glimpse(transit_bivariate_geo)</code></pre>
+<pre><code>## Rows: 402
+## Columns: 5
+## $ geoid                 &lt;chr&gt; &quot;42003408002&quot;, &quot;42003210700&quot;, &quot;42003220600&quot;, &quot;42…
+## $ drove_alone           &lt;dbl&gt; 2815, 589, 566, 1224, 466, 1063, 887, 826, 551, …
+## $ public_transportation &lt;dbl&gt; 8, 189, 146, 260, 100, 215, 262, 342, 670, 61, 3…
+## $ bi_class              &lt;chr&gt; &quot;3-1&quot;, &quot;1-2&quot;, &quot;1-1&quot;, &quot;2-2&quot;, &quot;1-1&quot;, &quot;2-2&quot;, &quot;1-2&quot;,…
+## $ geometry              &lt;POLYGON [°]&gt; POLYGON ((-79.99 40.63, -79..., POLYGON …</code></pre>
+<pre class="r"><code>table(transit_bivariate_geo$bi_class) %&gt;% 
+  enframe(name = &quot;bi_class&quot;, value = &quot;count_tracts&quot;) %&gt;% 
+  kbl()</code></pre>
+<table>
+<thead>
+<tr>
+<th style="text-align:left;">
+bi_class
+</th>
+<th style="text-align:right;">
+count_tracts
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+1-1
+</td>
+<td style="text-align:right;">
+124
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+1-2
+</td>
+<td style="text-align:right;">
+72
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+1-3
+</td>
+<td style="text-align:right;">
+9
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+2-1
+</td>
+<td style="text-align:right;">
+84
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+2-2
+</td>
+<td style="text-align:right;">
+66
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+2-3
+</td>
+<td style="text-align:right;">
+9
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+3-1
+</td>
+<td style="text-align:right;">
+34
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+3-2
+</td>
+<td style="text-align:right;">
+4
+</td>
+</tr>
+</tbody>
+</table>
+<p>This graph overlays the discrete <code>biscale</code> bins on the previous data to show how the function discretized the data.</p>
+<pre class="r"><code>transit_bivariate_geo %&gt;% 
+  ggplot(aes(drove_alone, public_transportation, color = bi_class)) +
+  geom_point(alpha = .75, size = 1) +
+  scale_x_comma() +
+  labs(x = &quot;Drove Alone&quot;,
+       y = &quot;Used Public Transit&quot;) +
+  guides(color = FALSE) +
+  theme_ipsum(base_size = 15)</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-12-1.png" width="672" />
+Note that the X and Y axes are independent.</p>
+<p>This creates the <code>biscale</code> legend i will put next to the map.</p>
+<pre class="r"><code>bi_var_legend &lt;- bi_legend(pal = &quot;DkBlue&quot;,
+                           dim = 3,
+                           xlab = &quot; More drove alone&quot;,
+                           ylab = &quot;More used public transit&quot;,
+                           size = 26) +
+  theme(plot.background = element_rect(fill = alpha(&quot;white&quot;, 0)),
+        panel.background = element_rect(fill = alpha(&quot;white&quot;, 0)))
+
+bi_var_legend</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-13-1.png" width="672" /></p>
+<p>I would like to show the % of commuters that each bin represents, so I extract the color palette from the <code>ggplot2</code> object and make my own legend with <code>geom_tile.</code></p>
+<pre class="r"><code>built_legend &lt;- ggplot_build(bi_var_legend)
+
+legend_palette &lt;- built_legend$data[[1]] %&gt;%
+  mutate(bi_class = str_c(x, y, sep = &quot;-&quot;)) %&gt;% 
+  select(fill, bi_class)
+
+legend_palette %&gt;% 
+  kbl()</code></pre>
+<table>
+<thead>
+<tr>
+<th style="text-align:left;">
+fill
+</th>
+<th style="text-align:left;">
+bi_class
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+#3B4994
+</td>
+<td style="text-align:left;">
+3-3
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+#8C62AA
+</td>
+<td style="text-align:left;">
+2-3
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+#BE64AC
+</td>
+<td style="text-align:left;">
+1-3
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+#5698B9
+</td>
+<td style="text-align:left;">
+3-2
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+#A5ADD3
+</td>
+<td style="text-align:left;">
+2-2
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+#DFB0D6
+</td>
+<td style="text-align:left;">
+1-2
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+#5AC8C8
+</td>
+<td style="text-align:left;">
+3-1
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+#ACE4E4
+</td>
+<td style="text-align:left;">
+2-1
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+#E8E8E8
+</td>
+<td style="text-align:left;">
+1-1
+</td>
+</tr>
+</tbody>
+</table>
+<pre class="r"><code>transit_bivariate &lt;- transit_bivariate_geo %&gt;% 
+  st_drop_geometry() %&gt;% 
+  select(geoid, bi_class, drove_alone, public_transportation) %&gt;% 
+  separate(bi_class, 
+           into = c(&quot;drove_alone_bi&quot;, &quot;public_transportation_bi&quot;), 
+           sep = &quot;-&quot;,
+           remove = FALSE) %&gt;% 
+  complete(drove_alone_bi, public_transportation_bi, fill = list(drove_alone = 0, public_transportation = 0)) %&gt;% 
+  mutate(bi_class = str_c(drove_alone_bi, public_transportation_bi, sep = &quot;-&quot;),
+         total = drove_alone + public_transportation,
+         pct_commuters = total / sum(total)) %&gt;%
+  group_by(bi_class, drove_alone_bi, public_transportation_bi) %&gt;% 
+  summarize(count_tract = n(),
+            pct_commuters = sum(pct_commuters)) %&gt;% 
+  ungroup()
+
+glimpse(transit_bivariate)</code></pre>
+<pre><code>## Rows: 9
+## Columns: 5
+## $ bi_class                 &lt;chr&gt; &quot;1-1&quot;, &quot;1-2&quot;, &quot;1-3&quot;, &quot;2-1&quot;, &quot;2-2&quot;, &quot;2-3&quot;, &quot;3-…
+## $ drove_alone_bi           &lt;chr&gt; &quot;1&quot;, &quot;1&quot;, &quot;1&quot;, &quot;2&quot;, &quot;2&quot;, &quot;2&quot;, &quot;3&quot;, &quot;3&quot;, &quot;3&quot;
+## $ public_transportation_bi &lt;chr&gt; &quot;1&quot;, &quot;2&quot;, &quot;3&quot;, &quot;1&quot;, &quot;2&quot;, &quot;3&quot;, &quot;1&quot;, &quot;2&quot;, &quot;3&quot;
+## $ count_tract              &lt;int&gt; 124, 72, 9, 84, 66, 9, 34, 4, 1
+## $ pct_commuters            &lt;dbl&gt; 0.13661, 0.11754, 0.02073, 0.25273, 0.22252, …</code></pre>
+<pre class="r"><code>legend_palette &lt;- transit_bivariate %&gt;% 
+  distinct(bi_class) %&gt;% 
+  left_join(legend_palette, by = &quot;bi_class&quot;)
+
+legend_palette %&gt;% 
+  kbl()</code></pre>
+<table>
+<thead>
+<tr>
+<th style="text-align:left;">
+bi_class
+</th>
+<th style="text-align:left;">
+fill
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+1-1
+</td>
+<td style="text-align:left;">
+#E8E8E8
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+1-2
+</td>
+<td style="text-align:left;">
+#DFB0D6
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+1-3
+</td>
+<td style="text-align:left;">
+#BE64AC
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+2-1
+</td>
+<td style="text-align:left;">
+#ACE4E4
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+2-2
+</td>
+<td style="text-align:left;">
+#A5ADD3
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+2-3
+</td>
+<td style="text-align:left;">
+#8C62AA
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+3-1
+</td>
+<td style="text-align:left;">
+#5AC8C8
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+3-2
+</td>
+<td style="text-align:left;">
+#5698B9
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+3-3
+</td>
+<td style="text-align:left;">
+#3B4994
+</td>
+</tr>
+</tbody>
+</table>
+<p>Note that <code>scale_fill_manual</code> uses the palette I extracted from the <code>ggplot2</code> object.</p>
+<pre class="r"><code>bi_var_legend_new &lt;- transit_bivariate %&gt;% 
+  mutate(pct_commuters = scales::percent(pct_commuters, accuracy = 1)) %&gt;% 
+  ggplot(aes(x = drove_alone_bi, y = public_transportation_bi, fill = bi_class)) +
+  geom_tile() +
+  geom_label(fill = &quot;white&quot;, alpha = .75, size = 12, label = &quot;    &quot;) +
+  geom_text(aes(label = pct_commuters), alpha = 1, size = 7) +
+  coord_fixed(ratio = 1) +
+  labs(x = substitute(paste(&quot;More drove alone&quot;, &quot;&quot; %-&gt;% &quot;&quot;)),
+       y = substitute(paste(&quot;More used public transit&quot;, &quot;&quot; %-&gt;% &quot;&quot;))) +
+  guides(fill = FALSE) +
+  scale_fill_manual(values = pull(legend_palette, fill)) +
+  theme_ipsum(plot_title_size = 30,
+              axis_title_size = 30) +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        axis.text.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks = element_blank())
+
+bi_var_legend_new +
+  labs(title = &#39;Percent of &quot;drive alone&quot; + &quot;public transit&quot; commuters&#39;)</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-17-1.png" width="1152" /></p>
+<p>This creates the map of commuter mode by census tract, filled by the discretized <code>biscale</code> bin.</p>
+<pre class="r"><code>transit_bi_var_plot &lt;- transit_bivariate_geo %&gt;% 
+  ggplot(aes(fill = bi_class)) +
+  geom_sf(show.legend = FALSE, size = NA) +
+  geom_sf(data = rivers, fill = &quot;black&quot;, color = &quot;black&quot;) +
+  bi_scale_fill(pal = &quot;DkBlue&quot;, dim = 3) +
+  bi_theme() +
+  theme_ipsum(base_size = 15) +
+  theme(axis.text.x = element_blank(),
+        axis.text.y = element_blank(),
+        panel.background = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank())
+
+transit_bi_var_plot</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-18-1.png" width="672" /></p>
+<p>Now that I have my legend and map, I use <code>patchwork</code> to stitch them together.</p>
+<pre class="r"><code>design = c(area(t = 2, l = 4, b = 20, r = 20),
+           area(t = 1, l = 1, b = 6, r = 6))
+
+plot(design)</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-19-1.png" width="672" /></p>
+<pre class="r"><code>combined_bi_var_plot &lt;- transit_bi_var_plot + bi_var_legend_new +
+  plot_layout(design = design) +
+  plot_annotation(title = &quot;Allegheny County Commuter Patterns&quot;,
+                  subtitle = &quot;Legend: % of commuters that drove alone or use public transit&quot;,
+                  caption = &quot;2019 American Community Survey&quot;,
+                  theme = theme(panel.background = element_rect(fill = &quot;black&quot;),
+                                plot.title = element_text(size = 30),
+                                plot.subtitle = element_text(size = 25),
+                                plot.caption = element_text(size = 25)))</code></pre>
+<p><img src="images/combined_bi_var_transit.png" width="4500" /></p>
+<p>Links:</p>
+<ul>
+<li><a href="https://www.pghcitypaper.com/pittsburgh/low-income-pittsburghers-are-becoming-increasingly-reliant-on-public-transit-bikes-walking-and-alternative-transportation/Content?oid=19059768" class="uri">https://www.pghcitypaper.com/pittsburgh/low-income-pittsburghers-are-becoming-increasingly-reliant-on-public-transit-bikes-walking-and-alternative-transportation/Content?oid=19059768</a></li>
+<li><a href="https://www.pghcitypaper.com/pittsburgh/new-commutes-analyzing-the-changing-ways-pittsburghers-get-to-work/Content?oid=6405396" class="uri">https://www.pghcitypaper.com/pittsburgh/new-commutes-analyzing-the-changing-ways-pittsburghers-get-to-work/Content?oid=6405396</a></li>
+<li><a href="https://www.pghcitypaper.com/pittsburgh/pittsburgh-is-the-7th-least-car-dependent-metro-in-america-study-says/Content?oid=16755873" class="uri">https://www.pghcitypaper.com/pittsburgh/pittsburgh-is-the-7th-least-car-dependent-metro-in-america-study-says/Content?oid=16755873</a></li>
+</ul>
+</div>
