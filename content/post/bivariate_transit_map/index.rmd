@@ -372,8 +372,12 @@ ggsave("images/combined_bi_var_transit_featured.png", combined_bi_var_plot,
 knitr::include_graphics("images/combined_bi_var_transit.png")
 ```
 
-Links:
+#### Links:
 
 * https://www.pghcitypaper.com/pittsburgh/low-income-pittsburghers-are-becoming-increasingly-reliant-on-public-transit-bikes-walking-and-alternative-transportation/Content?oid=19059768
 * https://www.pghcitypaper.com/pittsburgh/new-commutes-analyzing-the-changing-ways-pittsburghers-get-to-work/Content?oid=6405396
 * https://www.pghcitypaper.com/pittsburgh/pittsburgh-is-the-7th-least-car-dependent-metro-in-america-study-says/Content?oid=16755873
+* https://www.nytimes.com/2020/07/09/opinion/sunday/ban-cars-manhattan-cities.html
+* https://www.nytimes.com/2021/03/25/climate/buses-trains-ridership-climate-change.html
+* https://nacto.org/publication/transit-street-design-guide/introduction/why/designing-move-people/
+* https://rweekly.org/
