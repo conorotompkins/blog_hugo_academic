@@ -1,8 +1,8 @@
 ---
 # Documentation: https://sourcethemes.com/academic/docs/managing-content/
 
-title: "Mapping Pittsburgh Commuter Modes"
-subtitle: "Bivariate Discretized Bins"
+title: "Driving Alone vs. Public Transportation in Pittsburgh"
+subtitle: "Mapping commuter modes with bivariate discretized bins"
 summary: ""
 authors: [Conor Tompkins]
 tags: []
@@ -242,9 +242,9 @@ transit_bivariate_geo %>%
   guides(color = FALSE) +
   theme_ipsum(base_size = 15)
 ```
-Note that the X and Y axes are independent.
+Note that the X and Y axes are independent in this graph.
 
-This creates the `biscale` legend i will put next to the map.
+This creates the `biscale` legend I will put next to the map.
 ```{r}
 bi_var_legend <- bi_legend(pal = "DkBlue",
                            dim = 3,
