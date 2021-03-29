@@ -364,6 +364,9 @@ combined_bi_var_plot <- transit_bi_var_plot + bi_var_legend_new +
 ```{r, include = FALSE}
 ggsave("images/combined_bi_var_transit.png", combined_bi_var_plot,
        width = 30, height = 30, dpi = 300)
+
+ggsave("images/combined_bi_var_transit_featured.png", combined_bi_var_plot,
+       width = 30, height = 30, dpi = 200)
 ```
 ```{r, echo = FALSE, fig.width=30, fig.height=30}
 knitr::include_graphics("images/combined_bi_var_transit.png")
