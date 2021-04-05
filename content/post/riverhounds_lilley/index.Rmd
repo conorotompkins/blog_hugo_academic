@@ -75,7 +75,7 @@ goal_data %>%
   geom_line(size = 1.5) +
   geom_point(data = filter(goal_data, metric_type == "Actual"), size = 2) +
   labs(title = "Pittsburgh Riverhounds",
-       subtitle = "Expected and Actual Goals",
+       subtitle = "Expected and Actual Goals per game",
        x = "Season",
        y = "Goals",
        color = "Goal Type",
@@ -169,7 +169,7 @@ usl %>%
            x = -1, y = 1.5) +
   tune::coord_obs_pred() +
   scale_fill_manual(values = c("grey", "gold")) +
-  labs(title = NULL,
+  labs(title = "Goal and xG difference per game",
        x = "xG Difference",
        y = "Goal Difference",
        fill = "Riverhounds Coach") +
@@ -191,6 +191,7 @@ usl %>%
   coord_cartesian(ylim = c(-1.5, 1.5)) +
   #coord_fixed(ratio = .5) +
   labs(title = "Goal difference - xG difference",
+       subtitle = "Per game",
        x = "Season",
        y = substitute(paste("" %<-% "", "Under-performing", "  |  ", "Over-performing", "" %->% "")),
        fill = "Riverhounds Coach",
