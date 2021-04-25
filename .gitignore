@@ -3,6 +3,7 @@
 .RData
 .Ruserdata
 .DS_Store
+Thumbs.db
 
 #ignore folders with data used in R posts in them
 content/post/*/data/
@@ -10,4 +11,4 @@ content/post/data
 
 #ignore automated blogdown folders
 /blogdown
-public
+/public
