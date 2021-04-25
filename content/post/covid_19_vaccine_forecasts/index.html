@@ -1,0 +1,359 @@
+---
+# Documentation: https://sourcethemes.com/academic/docs/managing-content/
+
+title: "COVID-19 vaccine forecast and pastcasts"
+subtitle: ""
+summary: ""
+authors: [Conor Tompkins]
+tags: []
+categories: []
+date: 2021-04-22
+lastmod: 2021-04-22
+featured: false
+draft: false
+
+# Featured image
+# To use, add an image named `featured.jpg/png` to your page's folder.
+# Focal points: Smart, Center, TopLeft, Top, TopRight, Left, Right, BottomLeft, Bottom, BottomRight.
+image:
+  caption: ""
+  focal_point: ""
+  preview_only: false
+
+# Projects (optional).
+#   Associate this post with one or more of your projects.
+#   Simply enter your project's folder or file name without extension.
+#   E.g. `projects = ["internal-project"]` references `content/project/deep-learning/index.md`.
+#   Otherwise, set `projects = []`.
+projects: []
+---
+
+<script src="{{< blogdown/postref >}}index_files/header-attrs/header-attrs.js"></script>
+
+
+<p>Like many other Americans, I have been following the COVID-19 vaccination campaign closely. I have found the graphs and data on the <a href="https://www.nytimes.com/interactive/2020/us/covid-19-vaccine-doses.html">NYTimes</a> and <a href="https://www.bloomberg.com/graphics/covid-vaccine-tracker-global-distribution/">Bloomberg</a> sites very useful for tracking trends.</p>
+<p>This graph on the NYTimes site is particularly good, I think.
+<img src="nytimes_graph.png" width="594" /></p>
+<p>You can follow the trend of past vaccinations, and the forecast is useful.</p>
+<p>I wanted to know how it would look if multiple “historical” forecasts started along the trend line, in addition to the “current pace” line. This is possible with some nested tibbles and <code>ggplot2</code>. I walk through some of the data quality issues with the dataset at the end.</p>
+<p>Set up the environment:</p>
+<pre class="r"><code>library(tidyverse)
+library(tidycensus)
+library(sf)
+library(broom)
+library(lubridate)
+library(janitor)
+library(hrbrthemes)
+library(ggrepel)
+library(tune)
+library(slider)
+library(broom)
+
+theme_set(theme_ipsum())
+
+options(scipen = 999, digits = 4)</code></pre>
+<p>This sets up the total date range I will consider for the analysis:</p>
+<pre class="r"><code>#set date range to examine.
+date_seq &lt;- seq.Date(from = ymd(&quot;2020-12-01&quot;), to = ymd(&quot;2022-08-01&quot;), by = &quot;day&quot;)</code></pre>
+<p>I use the COVID-19 vaccine distribution data from <a href="https://github.com/govex/COVID-19">Johns Hopkins University</a>.</p>
+<pre class="r"><code>#download data from JHU
+vacc_data_raw &lt;- read_csv(&quot;https://raw.githubusercontent.com/govex/COVID-19/master/data_tables/vaccine_data/us_data/time_series/vaccine_data_us_timeline.csv&quot;) %&gt;% 
+  clean_names() %&gt;% 
+  #filter to only keep vaccine type All, which will show the cumulative sum of doses for all vaccine types
+  filter(vaccine_type == &quot;All&quot;) %&gt;% 
+  #select state, date, vaccine type, and stage one doses
+  select(province_state, date, stage_one_doses) %&gt;% 
+  #for each state, pad the time series to include all the dates in date_seq
+  complete(date = date_seq, province_state) %&gt;% 
+  #sort by state and date
+  arrange(province_state, date)</code></pre>
+<pre class="r"><code>vacc_data_raw</code></pre>
+<pre><code>## # A tibble: 39,585 x 3
+##    date       province_state stage_one_doses
+##    &lt;date&gt;     &lt;chr&gt;                    &lt;dbl&gt;
+##  1 2020-12-01 Alabama                     NA
+##  2 2020-12-02 Alabama                     NA
+##  3 2020-12-03 Alabama                     NA
+##  4 2020-12-04 Alabama                     NA
+##  5 2020-12-05 Alabama                     NA
+##  6 2020-12-06 Alabama                     NA
+##  7 2020-12-07 Alabama                     NA
+##  8 2020-12-08 Alabama                     NA
+##  9 2020-12-09 Alabama                     NA
+## 10 2020-12-10 Alabama                     NA
+## # … with 39,575 more rows</code></pre>
+<p>This replaces <code>NA</code> values of <code>stage_one_doses</code> with 0 if it occurred before the current date.</p>
+<pre class="r"><code>vacc_data &lt;- vacc_data_raw %&gt;% 
+  mutate(stage_one_doses = case_when(date &lt; ymd(&quot;2021-04-22&quot;) &amp; is.na(stage_one_doses) ~ 0,
+                                     !is.na(stage_one_doses) ~ stage_one_doses,
+                                     TRUE ~ NA_real_)) %&gt;% 
+  arrange(province_state, date)</code></pre>
+<p>This shows the cumulative sum of first doses by <code>province_state</code>. This reveals some data quality issues that I discuss later in the post.</p>
+<pre class="r"><code>vacc_data %&gt;% 
+  filter(date &lt;= ymd(&quot;2021-04-22&quot;)) %&gt;% 
+  ggplot(aes(date, stage_one_doses, group = province_state)) +
+  geom_line(alpha = .5, size = .3) +
+  scale_y_comma()</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-8-1.png" width="672" /></p>
+<p>This calculates the total sum of first doses by date.</p>
+<pre class="r"><code>vacc_data &lt;- vacc_data %&gt;% 
+  group_by(date) %&gt;% 
+  summarize(stage_one_doses = sum(stage_one_doses, na.rm = F)) %&gt;%
+  ungroup()</code></pre>
+<p>The inconsistent data reporting issues bubble up to the national level. I will take a 7-day trailing average to smooth that out.</p>
+<pre class="r"><code>vacc_data %&gt;% 
+  filter(date &lt;= ymd(&quot;2021-04-22&quot;)) %&gt;% 
+  ggplot(aes(date, stage_one_doses)) +
+  geom_line()</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-10-1.png" width="672" /></p>
+<p>This calculates the number of new doses given out by day. If the difference between day 1 and day 0 is negative, I replace it with 0.</p>
+<pre class="r"><code>vacc_data &lt;- vacc_data %&gt;% 
+  mutate(stage_one_doses_new = stage_one_doses - lag(stage_one_doses, n = 1),
+         stage_one_doses_new = case_when(stage_one_doses_new &lt; 0 ~ 0,
+                                         TRUE ~ stage_one_doses_new))</code></pre>
+<p>This calculates the 7-day trailing average of new first doses distributed.</p>
+<pre class="r"><code>vacc_data_rolling &lt;- vacc_data %&gt;% 
+  mutate(stage_one_doses_new_rolling = slide_index_dbl(.i = date,
+                                                       .x = stage_one_doses_new,
+                                                       .f = mean,
+                                                       .before = 6,
+                                                       .complete = FALSE))</code></pre>
+<p>Then I recalculate the cumulative sum of first doses using the trailing average instead of the raw data. This smooths out the data collection issues.</p>
+<pre class="r"><code>vacc_forecast &lt;- vacc_data_rolling %&gt;% 
+  fill(stage_one_doses_new_rolling, .direction = &quot;down&quot;) %&gt;%
+  mutate(future_flag = date &gt;= ymd(&quot;2021-04-22&quot;)) %&gt;%
+  mutate(stage_one_doses_new_rolling_forecast = cumsum(coalesce(stage_one_doses_new_rolling, 0)))
+
+vacc_forecast %&gt;% 
+  filter(future_flag == F) %&gt;% 
+  ggplot(aes(date, stage_one_doses_new_rolling_forecast)) +
+  geom_line() +
+  scale_y_comma()</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-13-1.png" width="672" /></p>
+<p>This calculates the percent of the population with a first dose vaccination.</p>
+<pre class="r"><code>vacc_forecast &lt;- vacc_forecast %&gt;% 
+  mutate(total_pop = 332410303) %&gt;% 
+  mutate(vacc_pct = stage_one_doses_new_rolling_forecast / total_pop)
+
+#at the current rate we should hit 90% around July 20th
+vacc_forecast %&gt;% 
+  filter(vacc_pct &gt; .9) %&gt;% 
+  slice(1)</code></pre>
+<pre><code>## # A tibble: 1 x 8
+##   date       stage_one_doses stage_one_doses_n… stage_one_doses_new… future_flag
+##   &lt;date&gt;               &lt;dbl&gt;              &lt;dbl&gt;                &lt;dbl&gt; &lt;lgl&gt;      
+## 1 2021-07-20              NA                 NA             1791900. TRUE       
+## # … with 3 more variables: stage_one_doses_new_rolling_forecast &lt;dbl&gt;,
+## #   total_pop &lt;dbl&gt;, vacc_pct &lt;dbl&gt;</code></pre>
+<p>This is a basic replication of the NYTimes graph.</p>
+<pre class="r"><code>vacc_forecast %&gt;% 
+  filter(date &lt;= ymd(&quot;2021-04-22&quot;) + 120) %&gt;% 
+  ggplot(aes(x = date)) +
+  geom_line(aes(y = vacc_pct, color = future_flag)) +
+  geom_hline(yintercept = .9, lty = 2) +
+  scale_y_percent(limits = c(0, 1), breaks = c(0, .25, .5, .75, .9, 1)) +
+  labs(y = &quot;Pct with 1 vaccination&quot;)</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-15-1.png" width="672" /></p>
+<p>Now to add the “historical” projections. I create a list of dates to filter the data with.</p>
+<pre class="r"><code>month_filters &lt;- c(seq(from = ymd(&quot;2021-02-01&quot;), to = ymd(&quot;2021-04-01&quot;), by = &quot;month&quot;), ymd(&quot;2021-04-22&quot;))
+
+month_filters</code></pre>
+<pre><code>## [1] &quot;2021-02-01&quot; &quot;2021-03-01&quot; &quot;2021-04-01&quot; &quot;2021-04-22&quot;</code></pre>
+<p>I use <code>map</code> to create 4 dataframes, each only containing data up until the given filter date.</p>
+<pre class="r"><code>vaccine_forecast_data &lt;- 
+  month_filters %&gt;% 
+  set_names() %&gt;% 
+  map(~filter(vacc_data_rolling, date &lt;= .x)) %&gt;% 
+  enframe(name = &quot;last_date&quot;, value = &quot;historical_data&quot;) %&gt;% 
+  mutate(last_date = ymd(last_date),
+         current_week = last_date == max(last_date))
+
+vaccine_forecast_data</code></pre>
+<pre><code>## # A tibble: 4 x 3
+##   last_date  historical_data        current_week
+##   &lt;date&gt;     &lt;list&gt;                 &lt;lgl&gt;       
+## 1 2021-02-01 &lt;tibble[,4] [63 × 4]&gt;  FALSE       
+## 2 2021-03-01 &lt;tibble[,4] [91 × 4]&gt;  FALSE       
+## 3 2021-04-01 &lt;tibble[,4] [122 × 4]&gt; FALSE       
+## 4 2021-04-22 &lt;tibble[,4] [143 × 4]&gt; TRUE</code></pre>
+<pre class="r"><code>vaccine_forecast_data %&gt;% 
+  unnest(historical_data) %&gt;% 
+  filter(date &lt;= ymd(&quot;2021-04-22&quot;) + 120) %&gt;% 
+  ggplot(aes(x = date)) +
+  geom_line(aes(y = stage_one_doses)) +
+  facet_wrap(~last_date) +
+  scale_y_comma()</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-18-1.png" width="672" /></p>
+<p>This unnests the tibbles and fills out the future data for each <code>last_date</code></p>
+<pre class="r"><code>vaccine_forecast_data &lt;- 
+  vaccine_forecast_data %&gt;% 
+  unnest(historical_data) %&gt;% 
+  group_by(last_date) %&gt;% 
+  #for each filter date table, create rows for the rest of the date range
+  complete(date = date_seq) %&gt;% 
+  fill(stage_one_doses_new_rolling, current_week, .direction = &quot;down&quot;) %&gt;% 
+  #create a flag for whether a row is observed or predicted
+  mutate(prediction_flag = date &gt;= last_date,
+  #create a flag for whether a row is after the current date
+         future_flag = date &gt; ymd(&quot;2021-04-22&quot;)) %&gt;%
+  #for each filter date, roll the 7 day moving average of vaccination rate forward
+  mutate(stage_one_doses_new_rolling_forecast = cumsum(coalesce(stage_one_doses_new_rolling, 0))) %&gt;% 
+  #source of population data: https://www.census.gov/popclock/
+  mutate(total_pop = 330175936) %&gt;% 
+  #calculate vaccination %
+  mutate(vacc_pct = stage_one_doses_new_rolling_forecast / total_pop,
+         vacc_pct = round(vacc_pct, 3)) %&gt;% 
+  filter(vacc_pct &lt;= 1.1) %&gt;% 
+  ungroup()
+
+vaccine_forecast_data</code></pre>
+<pre><code>## # A tibble: 1,481 x 11
+##    last_date  date       stage_one_doses stage_one_doses_n… stage_one_doses_new…
+##    &lt;date&gt;     &lt;date&gt;               &lt;dbl&gt;              &lt;dbl&gt;                &lt;dbl&gt;
+##  1 2021-02-01 2020-12-01               0                 NA                   NA
+##  2 2021-02-01 2020-12-02               0                  0                   NA
+##  3 2021-02-01 2020-12-03               0                  0                   NA
+##  4 2021-02-01 2020-12-04               0                  0                   NA
+##  5 2021-02-01 2020-12-05               0                  0                   NA
+##  6 2021-02-01 2020-12-06               0                  0                   NA
+##  7 2021-02-01 2020-12-07               0                  0                   NA
+##  8 2021-02-01 2020-12-08               0                  0                    0
+##  9 2021-02-01 2020-12-09               0                  0                    0
+## 10 2021-02-01 2020-12-10               0                  0                    0
+## # … with 1,471 more rows, and 6 more variables: current_week &lt;lgl&gt;,
+## #   prediction_flag &lt;lgl&gt;, future_flag &lt;lgl&gt;,
+## #   stage_one_doses_new_rolling_forecast &lt;dbl&gt;, total_pop &lt;dbl&gt;, vacc_pct &lt;dbl&gt;</code></pre>
+<p>This calculates when the vaccination rate hits 100% for each historical projection.</p>
+<pre class="r"><code>vaccine_forecast_data &lt;- 
+  vaccine_forecast_data %&gt;% 
+  mutate(total_vacc_flag = vacc_pct &gt;= 1) %&gt;% 
+  group_by(last_date) %&gt;% 
+  mutate(total_vacc_date = case_when(cumsum(total_vacc_flag) &gt;= 1 ~ date,
+                                     TRUE ~ NA_Date_)) %&gt;% 
+  filter(cumsum(!is.na(total_vacc_date)) &lt;= 1) %&gt;% 
+  ungroup()
+
+vaccine_forecast_data &lt;- vaccine_forecast_data %&gt;% 
+  mutate(current_week_fct = case_when(current_week == F ~ &quot;Historical projection&quot;,
+                                      current_week == T ~ &quot;Current rate&quot;))</code></pre>
+<p>Then I create some secondary tables to annotate the final chart.</p>
+<pre class="r"><code>#secondary tables for labeling
+current_vacc_percent &lt;- vaccine_forecast_data %&gt;% 
+  filter(current_week == T, date == ymd(&quot;2021-04-22&quot;)) %&gt;% 
+  select(last_date, date, current_week, vacc_pct)
+
+current_vacc_percent_label &lt;- current_vacc_percent %&gt;% 
+  mutate(text_label = str_c(&quot;Current&quot;, scales::percent(vacc_pct), sep = &quot;: &quot;))</code></pre>
+<pre class="r"><code>vaccine_forecast_graph &lt;- vaccine_forecast_data %&gt;% 
+  ggplot(aes(x = date, y = vacc_pct, group = last_date)) +
+  #90% line
+  geom_hline(yintercept = .9, lty = 2) +
+  annotate(x = ymd(&quot;2021-01-25&quot;), y = .915,
+           label = &quot;Herd Immunity Threshhold&quot;, geom = &quot;text&quot;, size = 6) +
+  #past cumulative line
+  geom_line(data = filter(vaccine_forecast_data, current_week == T, date &lt;= ymd(&quot;2021-04-22&quot;)),
+            color = &quot;black&quot;, lty = 1, size = .7) +
+  #future cumulative lines
+  geom_line(data = filter(vaccine_forecast_data, prediction_flag == T),
+            aes(color = as.factor(last_date)),
+            size = 1.3)  +
+  # horizontal line showing current vaccination rate
+  geom_hline(data = current_vacc_percent,
+             aes(yintercept = vacc_pct),
+             size = .1) +
+  #add labels for date of 100% vaccination for the first and last filter dates
+  geom_label(data = filter(vaccine_forecast_data,
+                           last_date == min(last_date) | last_date == max(last_date)),
+             aes(label = total_vacc_date,
+                 color = as.factor(last_date)),
+             show.legend = FALSE,
+             fill = &quot;grey&quot;,
+             position = position_nudge(y = .05),
+             size = 6) +
+  # label for horizontal line showing current vaccination rate
+  geom_text(data = current_vacc_percent_label,
+            aes(label = text_label),
+            position = position_nudge(x = -122, y = .02),
+            size = 6) +
+  scale_x_date(limits = c(ymd(&quot;2020-12-01&quot;), ymd(&quot;2022-08-01&quot;))) +
+  scale_y_percent(limits = c(0, 1.1), breaks = c(0, .25, .5, .75, .9, 1)) +
+  scale_alpha_manual(values = c(1, .5)) +
+  scale_color_viridis_d(labels = c(&quot;February 1&quot;, &quot;March 1&quot;, &quot;April 1&quot;, 
+                                   str_c(month(ymd(&quot;2021-04-22&quot;), label = T, abbr = F), mday(ymd(&quot;2021-04-22&quot;)), sep = &quot; &quot;))) +
+  guides(color = guide_legend(override.aes = list(fill = NA))) +
+  labs(title = &quot;Historic and Current U.S. Vaccination Forecasts&quot;,
+       x = NULL,
+       y = &quot;Single Dose Vaccination %&quot;,
+       color = &quot;Projection start date&quot;) +
+  theme_ipsum(plot_title_size = 25,
+              subtitle_size = 23,
+              axis_text_size = 23,
+              axis_title_size = 25) +
+  theme(panel.grid.minor = element_blank(),
+        legend.title = element_text(size = 20),
+        legend.text = element_text(size = 18))
+
+vaccine_forecast_graph</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-22-1.png" width="1536" /></p>
+<div id="data-quality-issues" class="section level3">
+<h3>Data quality issues</h3>
+<div id="cumulative-decreases" class="section level4">
+<h4>Cumulative decreases</h4>
+<p>Due to data collection issues, there are cases where the cumulative sum of vaccinations for a given state actually decreases. I think a lot of this is because of interruptions due to the nation-wide winter storm in February 2021. Other instances could be attributed to changes in methodology for tracking vaccine distribution.</p>
+<pre class="r"><code>vacc_data_raw %&gt;% 
+  group_by(province_state) %&gt;% 
+  mutate(less_than_prev = stage_one_doses &lt; lag(stage_one_doses, 1)) %&gt;% 
+  ungroup() %&gt;% 
+  filter(less_than_prev == T) %&gt;% 
+  count(date, less_than_prev) %&gt;% 
+  ggplot(aes(date, n)) +
+  geom_point() +
+  labs(x = NULL,
+       y = &quot;Bad data observations&quot;)</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-23-1.png" width="672" /></p>
+<p>This shows that most of the inconsistent data comes from federal agencies, US territories, and Freely Associated States</p>
+<pre class="r"><code>vacc_data_raw %&gt;% 
+  group_by(province_state) %&gt;% 
+  mutate(less_than_prev = stage_one_doses &lt; lag(stage_one_doses, 1)) %&gt;% 
+  ungroup() %&gt;% 
+  filter(less_than_prev == T) %&gt;% 
+  count(province_state, less_than_prev, sort = T) </code></pre>
+<pre><code>## # A tibble: 59 x 3
+##    province_state                 less_than_prev     n
+##    &lt;chr&gt;                          &lt;lgl&gt;          &lt;int&gt;
+##  1 Bureau of Prisons              TRUE              21
+##  2 Republic of Palau              TRUE              14
+##  3 Veterans Health Administration TRUE              10
+##  4 West Virginia                  TRUE              10
+##  5 Federated States of Micronesia TRUE               9
+##  6 Guam                           TRUE               9
+##  7 Department of Defense          TRUE               7
+##  8 Maine                          TRUE               6
+##  9 Marshall Islands               TRUE               6
+## 10 Rhode Island                   TRUE               6
+## # … with 49 more rows</code></pre>
+<p>This is an example from Alabama:</p>
+<pre class="r"><code>vacc_data_raw %&gt;% 
+  mutate(less_than_prev = stage_one_doses &lt; lag(stage_one_doses, 1)) %&gt;% 
+  filter(date &gt;= &quot;2021-02-10&quot;, date &lt; &quot;2021-02-13&quot;,
+         province_state == &quot;Alabama&quot;) %&gt;% 
+  arrange(province_state, date)</code></pre>
+<pre><code>## # A tibble: 3 x 4
+##   date       province_state stage_one_doses less_than_prev
+##   &lt;date&gt;     &lt;chr&gt;                    &lt;dbl&gt; &lt;lgl&gt;         
+## 1 2021-02-10 Alabama                 395196 FALSE         
+## 2 2021-02-11 Alabama                 314026 TRUE          
+## 3 2021-02-12 Alabama                 438081 FALSE</code></pre>
+</div>
+<div id="pennsylvania" class="section level4">
+<h4>Pennsylvania</h4>
+<p>From April 17-18th there was a big jump in stage one vaccine distribution in Pennsylvania. It is unclear what caused this jump. My guess is a data collection issue.</p>
+<pre class="r"><code>vacc_data_raw %&gt;% 
+  filter(province_state == &quot;Pennsylvania&quot;) %&gt;% 
+  drop_na(stage_one_doses) %&gt;% 
+  ggplot(aes(date, stage_one_doses)) +
+  geom_line() +
+  scale_y_comma()</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-26-1.png" width="672" /></p>
+</div>
+</div>
