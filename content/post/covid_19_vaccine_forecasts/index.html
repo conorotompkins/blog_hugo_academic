@@ -295,6 +295,22 @@ current_vacc_percent_label &lt;- current_vacc_percent %&gt;%
 
 vaccine_forecast_graph</code></pre>
 <p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-22-1.png" width="1536" /></p>
+<p>Based on the difference in 7-day first-dose vaccinations, the U.S. shortened the timeline for 100% first-dose vaccination by 323 days.</p>
+<p>This is a naive calculation, since the vaccination projections are based on static 7-day vaccination distribution averages. I would expect the 7-day distribution average to vary based on historical data. In addition, as the national first-dose vaccination percentage approaches 100%, the 7-day average of distribution will likely decrease because of two factors: portions of the remaining unvaccinated population probably have lower access to vaccines (i.e. homebound adults), or are hesitant to be vaccinated.</p>
+<pre class="r"><code>vaccine_forecast_data %&gt;% 
+  select(last_date, date, vacc_pct) %&gt;% 
+  filter(last_date == min(last_date) | last_date == max(last_date)) %&gt;% 
+  filter(vacc_pct &gt;= 1) %&gt;% 
+  group_by(last_date) %&gt;% 
+  slice(1) %&gt;% 
+  ungroup() %&gt;% 
+  select(last_date, date) %&gt;% 
+  pivot_wider(names_from = last_date, values_from = date) %&gt;% 
+  mutate(difference = `2021-02-01` - `2021-04-22`)</code></pre>
+<pre><code>## # A tibble: 1 x 3
+##   `2021-02-01` `2021-04-22` difference
+##   &lt;date&gt;       &lt;date&gt;       &lt;drtn&gt;    
+## 1 2022-06-25   2021-08-06   323 days</code></pre>
 <div id="data-quality-issues" class="section level3">
 <h3>Data quality issues</h3>
 <div id="cumulative-decreases" class="section level4">
@@ -310,7 +326,7 @@ vaccine_forecast_graph</code></pre>
   geom_point() +
   labs(x = NULL,
        y = &quot;Bad data observations&quot;)</code></pre>
-<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-23-1.png" width="672" /></p>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-24-1.png" width="672" /></p>
 <p>This shows that most of the inconsistent data comes from federal agencies, US territories, and Freely Associated States</p>
 <pre class="r"><code>vacc_data_raw %&gt;% 
   group_by(province_state) %&gt;% 
@@ -354,6 +370,6 @@ vaccine_forecast_graph</code></pre>
   ggplot(aes(date, stage_one_doses)) +
   geom_line() +
   scale_y_comma()</code></pre>
-<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-26-1.png" width="672" /></p>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-27-1.png" width="672" /></p>
 </div>
 </div>

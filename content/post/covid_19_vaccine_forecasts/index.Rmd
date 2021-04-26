@@ -325,6 +325,22 @@ vaccine_forecast_graph <- vaccine_forecast_data %>%
 vaccine_forecast_graph
 ```
 
+Based on the difference in 7-day first-dose vaccinations, the U.S. shortened the timeline for 100% first-dose vaccination by 323 days.
+
+This is a naive calculation, since the vaccination projections are based on static 7-day vaccination distribution averages. I would expect the 7-day distribution average to vary based on historical data. In addition, as the national first-dose vaccination percentage approaches 100%, the 7-day average of distribution will likely decrease because of two factors: portions of the remaining unvaccinated population probably have lower access to vaccines (i.e. homebound adults), or are hesitant to be vaccinated.
+```{r}
+vaccine_forecast_data %>% 
+  select(last_date, date, vacc_pct) %>% 
+  filter(last_date == min(last_date) | last_date == max(last_date)) %>% 
+  filter(vacc_pct >= 1) %>% 
+  group_by(last_date) %>% 
+  slice(1) %>% 
+  ungroup() %>% 
+  select(last_date, date) %>% 
+  pivot_wider(names_from = last_date, values_from = date) %>% 
+  mutate(difference = `2021-02-01` - `2021-04-22`)
+```
+
 ### Data quality issues
 
 #### Cumulative decreases
