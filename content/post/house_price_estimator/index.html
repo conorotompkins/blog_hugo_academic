@@ -29,6 +29,9 @@ projects: []
 ---
 
 <script src="{{< blogdown/postref >}}index_files/header-attrs/header-attrs.js"></script>
+<script src="{{< blogdown/postref >}}index_files/htmlwidgets/htmlwidgets.js"></script>
+<script src="{{< blogdown/postref >}}index_files/pymjs/pym.v1.js"></script>
+<script src="{{< blogdown/postref >}}index_files/widgetframe-binding/widgetframe.js"></script>
 
 
 <p><a href="https://conorotompkins.shinyapps.io/house_price_estimator/">Click here to view the full dashboard</a></p>
@@ -43,7 +46,7 @@ projects: []
 <li>Bagged Tree</li>
 </ul>
 <p>I chose the Bagged Tree model because it performed about as well as the Random Forest model, but it predicts against new data much faster. Prediction speed is important because the UI for the dashboard has to update very quickly.</p>
-<p>Total observations: 160,181</p>
+<p>Total observations: 157,925</p>
 <div id="training-set-metrics-75-of-total-observations" class="section level2">
 <h2>Training set metrics (75% of total observations)</h2>
 <p>I used 10-fold cross-validation to assess model performance against the training set:</p>
@@ -53,7 +56,6 @@ projects: []
   ggplot(aes(rmse, rsq, color = model_name)) +
   geom_point() +
   scale_x_continuous(label = dollar) +
-  #coord_cartesian(xlim = c(65000, 79000)) +
   labs(x = &quot;Root Mean Squared Error&quot;,
        y = &quot;R^2&quot;)</code></pre>
 <p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-4-1.png" width="672" /></p>
@@ -63,46 +65,205 @@ projects: []
 <pre class="r"><code>test_metrics %&gt;% 
   select(.metric, .estimate)</code></pre>
 <pre><code>## # A tibble: 3 x 2
-##   .metric .estimate
-##   &lt;chr&gt;       &lt;dbl&gt;
-## 1 rmse    54470.   
-## 2 rsq         0.870
-## 3 mape       22.2</code></pre>
-</div>
-<div id="observed-vs.-predicted-full-dataset" class="section level2">
-<h2>Observed vs. Predicted (full dataset)</h2>
-<pre class="r"><code>full_model_results %&gt;% 
-  ggplot(aes(sale_price_adj, 10^.pred)) +
-  geom_density_2d_filled() +
-  geom_abline(lty = 2, color = &quot;white&quot;) +
-  scale_x_log10(label = dollar) +
-  scale_y_log10(label = dollar) +
-  coord_cartesian(xlim = c(30000, 10^6),
-                  ylim = c(30000, 10^6)) +
-  labs(x = &quot;Actual sale price&quot;,
-       y = &quot;Predicted sale price&quot;,
-       title = &quot;Observed vs. Predicted sale price&quot;,
-       fill = &quot;Density of observations&quot;)</code></pre>
+##   .metric   .estimate
+##   &lt;chr&gt;         &lt;dbl&gt;
+## 1 rmse     216212.   
+## 2 rsq           0.628
+## 3 mape    3229245.</code></pre>
+<pre class="r"><code>model_results %&gt;% 
+  ggplot(aes(.resid)) +
+  geom_density() +
+  geom_vline(xintercept = 0, lty = 2) +
+  scale_x_continuous(label = label_dollar())</code></pre>
 <p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-8-1.png" width="672" /></p>
-</div>
-<div id="variable-importance" class="section level2">
-<h2>Variable Importance</h2>
-<pre class="r"><code>var_imp %&gt;% 
-  mutate(term = fct_reorder(term, value)) %&gt;% 
-  ggplot(aes(value, term)) +
-  geom_point() +
-  scale_x_comma() +
-  labs(x = &quot;Importance&quot;,
-       y = NULL)</code></pre>
-<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-10-1.png" width="672" />
-Model performance by <code>geo_id</code></p>
-<pre class="r"><code>geo_id_shapes %&gt;% 
-  left_join(geo_id_rsq) %&gt;% 
-  ggplot() +
-  geom_sf(aes(fill = .estimate)) +
+<pre class="r"><code>model_results %&gt;% 
+  ggplot(aes(sale_price_adj, .pred_dollar)) +
+  geom_density_2d_filled(contour_var = &quot;count&quot;) +
+  scale_x_log10(label = label_dollar()) +
+  scale_y_log10(label = label_dollar()) +
+  guides(fill = guide_coloursteps()) +
+  labs(x = &quot;Inflation-adjusted sale price log10 scale&quot;,
+       y = &quot;Prediction&quot;,
+       fill = &quot;Sales&quot;)</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-9-1.png" width="672" /></p>
+<p>The model becomes less effective as the actual sale price increases.</p>
+<pre class="r"><code>model_results %&gt;% 
+  ggplot(aes(sale_price_adj, .resid)) +
+  geom_point(alpha = .01) +
+  scale_x_log10(label = dollar) +
+  scale_y_continuous(label = dollar) +
+  labs(x = &quot;Inflation-adjusted sale price log10 scale&quot;,
+       y = &quot;Residual&quot;)</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-10-1.png" width="672" /></p>
+<pre class="r"><code>geo_ids &lt;- st_read(&quot;data/unified_geo_ids/unified_geo_ids.shp&quot;,
+                   quiet = T)
+
+geo_id_median_resid &lt;- model_results %&gt;% 
+  group_by(geo_id) %&gt;% 
+  summarize(median_resid = median(.resid))
+
+pal &lt;- colorNumeric(
+  palette = &quot;viridis&quot;,
+  domain = geo_id_median_resid$median_resid)
+
+leaflet_map &lt;- geo_ids %&gt;% 
+  left_join(geo_id_median_resid) %&gt;% 
+  leaflet() %&gt;% 
+  addProviderTiles(providers$Stamen.TonerLite,
+                   options = providerTileOptions(noWrap = TRUE,
+                                                 minZoom = 9, 
+                                                 #maxZoom = 8
+                   )) %&gt;% 
+  addPolygons(popup = ~ str_c(geo_id, &quot; &quot;, &quot;median residual: &quot;, round(median_resid, 2), sep = &quot;&quot;),
+              fillColor = ~pal(median_resid),
+              fillOpacity = .7,
+              color = &quot;black&quot;,
+              weight = 3) %&gt;% 
+  addLegend(&quot;bottomright&quot;, pal = pal, values = ~median_resid,
+            title = &quot;Median of residual&quot;,
+            opacity = 1)
+
+widgetframe::frameWidget(leaflet_map)</code></pre>
+<div id="htmlwidget-1" style="width:100%;height:480px;" class="widgetframe html-widget"></div>
+<script type="application/json" data-for="htmlwidget-1">{"x":{"url":"index_files/figure-html//widgets/widget_unnamed-chunk-11.html","options":{"xdomain":"*","allowfullscreen":false,"lazyload":false}},"evals":[],"jsHooks":[]}</script>
+<pre class="r"><code>model_results %&gt;% 
+  add_count(geo_id) %&gt;% 
+  mutate(geo_id = fct_reorder(geo_id, .resid, .fun = median)) %&gt;% 
+  ggplot(aes(.resid, geo_id, fill = n)) +
+  geom_boxplot(color = &quot;grey&quot;,
+               outlier.alpha = 0) +
+  geom_vline(xintercept = 0, lty = 2, color = &quot;red&quot;) +
   scale_fill_viridis_c() +
-  labs(fill = &quot;R-squared&quot;) +
-  theme_void()</code></pre>
+  coord_cartesian(xlim = c(-10^5, 10^5)) +
+  labs(fill = &quot;Sales&quot;)</code></pre>
 <p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-12-1.png" width="672" /></p>
+<pre class="r"><code>model_results %&gt;% 
+  add_count(style_desc) %&gt;% 
+  mutate(style_desc = fct_reorder(style_desc, .resid, .fun = median)) %&gt;% 
+  ggplot(aes(.resid, style_desc, fill = n)) +
+  geom_boxplot(color = &quot;grey&quot;,
+               outlier.alpha = 0) +
+  geom_vline(xintercept = 0, lty = 2, color = &quot;red&quot;) +
+  coord_cartesian(xlim = c(-10.5^5, 10.5^5)) +
+  scale_x_continuous(labels = label_dollar()) +
+  scale_fill_viridis_c() +
+  labs(fill = &quot;Sales&quot;,
+       x = &quot;Residual&quot;,
+       y = &quot;House style&quot;)</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-13-1.png" width="672" /></p>
+<pre class="r"><code>model_results %&gt;% 
+  add_count(grade_desc) %&gt;% 
+  mutate(grade_desc = fct_reorder(grade_desc, .resid, .fun = median)) %&gt;% 
+  ggplot(aes(.resid, grade_desc, fill = n)) +
+  geom_boxplot(color = &quot;grey&quot;,
+               outlier.alpha = 0) +
+  scale_fill_viridis_c() +
+  scale_x_continuous(labels = label_dollar()) +
+  coord_cartesian(xlim = c(-10^5, 10.5^6)) +
+  labs(x = &quot;Residual&quot;,
+       y = &quot;Grade&quot;,
+       fill = &quot;Sales&quot;)</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-14-1.png" width="672" /></p>
+<pre class="r"><code>model_results %&gt;% 
+  add_count(condition_desc) %&gt;% 
+  mutate(condition_desc = fct_explicit_na(condition_desc),
+         condition_desc = fct_reorder(condition_desc, .resid, .fun = median)) %&gt;% 
+  ggplot(aes(.resid, condition_desc, fill = n)) +
+  geom_boxplot(color = &quot;grey&quot;,
+               outlier.alpha = 0) +
+  geom_vline(xintercept = 0, lty = 2, color = &quot;red&quot;) +
+  scale_fill_viridis_c() +
+  scale_x_continuous(labels = label_dollar()) +
+  coord_cartesian(xlim = c(-10^5, 10.5^5)) +
+  labs(x = &quot;Residual&quot;,
+       y = &quot;Condition&quot;,
+       fill = &quot;Sales&quot;)</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-15-1.png" width="672" /></p>
+<pre class="r"><code>model_results %&gt;% 
+  ggplot(aes(finished_living_area, .resid)) +
+  geom_point(alpha = .1) +
+  scale_x_log10() +
+  scale_y_continuous(label = dollar) +
+  labs(x = &quot;Finished Living Area sq. ft. log10 scale&quot;,
+       y = &quot;Residual&quot;)</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-16-1.png" width="672" /></p>
+<pre class="r"><code>model_results %&gt;% 
+  ggplot(aes(lot_area, .resid)) +
+  geom_point(alpha = .1) +
+  scale_x_log10(labels = label_comma()) +
+  scale_y_continuous(labels = label_dollar()) +
+  labs(x = &quot;Lot Area sq. ft. log10 scale&quot;,
+       y = &quot;Residual&quot;)</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-17-1.png" width="672" /></p>
+<pre class="r"><code>model_results %&gt;% 
+  group_by(house_age_at_sale) %&gt;% 
+  rmse(truth = sale_price_adj, estimate = .pred_dollar) %&gt;% 
+  ggplot(aes(house_age_at_sale, .estimate)) +
+  geom_point(alpha = .5) +
+  scale_y_continuous(labels = label_dollar()) +
+  labs(x = &quot;House age at sale&quot;,
+       y = &quot;RMSE&quot;)</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-18-1.png" width="672" /></p>
+<p>The model is best at predicting the sale price of houses built in the 1940s to 1980s. This is when most of the houses in the county were built.</p>
+<pre class="r"><code>model_results %&gt;% 
+  group_by(year_built) %&gt;% 
+  rmse(truth = sale_price_adj, estimate = .pred_dollar) %&gt;% 
+  ggplot(aes(year_built, .estimate)) +
+  geom_point(alpha = .5) +
+  scale_y_continuous(labels = label_dollar()) +
+  labs(x = &quot;Year Built&quot;,
+       y = &quot;RMSE&quot;)</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-19-1.png" width="672" /></p>
+<pre class="r"><code>model_results %&gt;% 
+  add_count(bedrooms) %&gt;% 
+  ggplot(aes(.resid, bedrooms, group = bedrooms, fill = n)) +
+  geom_boxplot(color = &quot;grey&quot;,
+               outlier.alpha = 0) +
+  geom_vline(xintercept = 0, lty = 2, color = &quot;red&quot;) +
+  scale_y_continuous(breaks = c(0:15)) +
+  scale_fill_viridis_c() +
+  scale_x_continuous(labels = label_dollar()) +
+  coord_cartesian(xlim = c(-10^5, 10^5)) +
+  labs(x = &quot;Residual&quot;,
+       y = &quot;Bedrooms&quot;,
+       fill = &quot;Sales&quot;)</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-20-1.png" width="672" /></p>
+<pre class="r"><code>model_results %&gt;% 
+  add_count(full_baths) %&gt;% 
+  ggplot(aes(.resid, full_baths, group = full_baths, fill = n)) +
+  geom_boxplot(color = &quot;grey&quot;,
+               outlier.alpha = 0) +
+  geom_vline(xintercept = 0, lty = 2, color = &quot;red&quot;) +
+  scale_y_continuous(breaks = c(0:12)) +
+  scale_fill_viridis_c() +
+  scale_x_continuous(label = dollar) +
+  coord_cartesian(xlim = c(-10^5, 750000)) +
+  labs(x = &quot;Residual&quot;,
+       y = &quot;Full bathrooms&quot;,
+       fill = &quot;Sales&quot;)</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-21-1.png" width="672" /></p>
+<pre class="r"><code>model_results %&gt;% 
+  add_count(half_baths) %&gt;% 
+  ggplot(aes(.resid, half_baths, group = half_baths, fill = n)) +
+  geom_boxplot(color = &quot;grey&quot;,
+               outlier.alpha = 0) +
+  geom_vline(xintercept = 0, lty = 2, color = &quot;red&quot;) +
+  scale_y_continuous(breaks = c(0:8)) +
+  scale_x_continuous(labels = label_dollar()) +
+  scale_fill_viridis_c() +
+  coord_cartesian(xlim = c(-10^5, 10^5)) +
+  labs(x = &quot;Residual&quot;,
+       y = &quot;Half bathrooms&quot;,
+       fill = &quot;Sales&quot;)</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-22-1.png" width="672" /></p>
+<pre class="r"><code>model_results %&gt;% 
+  group_by(sale_year) %&gt;% 
+  rmse(truth = sale_price_adj, estimate = .pred_dollar) %&gt;% 
+  ggplot(aes(sale_year, .estimate)) +
+  geom_line() +
+  scale_y_continuous(label = dollar) +
+  labs(x = &quot;Sale year&quot;,
+       y = &quot;RMSE&quot;)</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-23-1.png" width="672" /></p>
 </div>
 </div>
