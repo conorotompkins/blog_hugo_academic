@@ -45,9 +45,9 @@ theme_set(theme_ipsum())
 options(scipen = 999, digits = 4)
 ```
 
-[Click here to view the full dashboard](https://conorotompkins.shinyapps.io/house_price_estimator/)
+[Click here to view the full dashboard](https://conorotompkins.shinyapps.io/house_price_app/?_ga=2.94170075.792173544.1627131723-610183357.1620160758)
 
-<iframe height="800" width="1000" frameborder="yes" src=" https://conorotompkins.shinyapps.io/house_price_estimator/"> </iframe>
+<iframe height="800" width="1000" frameborder="yes" src=" https://conorotompkins.shinyapps.io/house_price_app/?_ga=2.94170075.792173544.1627131723-610183357.1620160758"> </iframe>
 
 # Model discussion
 
