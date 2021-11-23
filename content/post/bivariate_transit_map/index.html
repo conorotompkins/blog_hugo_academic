@@ -371,12 +371,18 @@ acs1_vars %&gt;%
 ## [2] &quot;estimate!!total:!!public transportation (excluding taxicab):&quot;</code></pre>
 <p>This downloads the commuter mode data and subtracts the rivers from the census tract polygons so it looks nice on a map:</p>
 <pre class="r"><code>st_erase &lt;- function(x, y) {
-  st_difference(x, st_union(st_combine(y)))
+  st_difference(x, st_union(y))
 }
 
 rivers &lt;- area_water(&quot;PA&quot;, &quot;Allegheny&quot;, class = &quot;sf&quot;, progress_bar = F) %&gt;% 
   arrange(desc(AWATER)) %&gt;% 
-  slice(1:3)
+  slice(1:3) %&gt;% 
+  st_simplify()
+
+tracts &lt;- get_acs(geography = &quot;tract&quot;, variables = &quot;B08301_001&quot;,
+        year = 2019, state = &quot;PA&quot;, county = &quot;Allegheny&quot;,
+        geometry = T) %&gt;% 
+  st_erase(rivers)
 
 tract_transit &lt;- get_acs(geography = &quot;tract&quot;, variables = vars, summary_var = &quot;B08301_001&quot;,
                          year = 2019, state = &quot;PA&quot;, county = &quot;Allegheny&quot;,
@@ -391,7 +397,7 @@ tract_transit &lt;- get_acs(geography = &quot;tract&quot;, variables = vars, sum
 ## $ variable    &lt;chr&gt; &quot;Drove alone&quot;, &quot;Public transportation&quot;, &quot;Drove alone&quot;, &quot;Pu…
 ## $ estimate    &lt;dbl&gt; 2815, 8, 589, 189, 566, 146, 1224, 260, 466, 100, 1063, 21…
 ## $ summary_est &lt;dbl&gt; 3165, 3165, 1231, 1231, 1110, 1110, 1992, 1992, 702, 702, …
-## $ geometry    &lt;POLYGON [°]&gt; POLYGON ((-79.99 40.63, -79..., POLYGON ((-79.99 4…</code></pre>
+## $ geometry    &lt;POLYGON [°]&gt; POLYGON ((-79.99 40.61, -79..., POLYGON ((-79.99 4…</code></pre>
 <p>As discussed earlier, public transit is not the majority commuting mode in most areas:</p>
 <pre class="r"><code>tract_transit %&gt;% 
   st_drop_geometry() %&gt;% 
@@ -449,18 +455,22 @@ I made the X and Y axes symmetric to emphasize the difference in scale between t
            y = public_transportation, 
            style = &quot;fisher&quot;, 
            dim = 3) %&gt;% 
-  left_join(tract_transit %&gt;% group_by(GEOID) %&gt;% summarize(), 
+  left_join(tracts, 
             by = c(&quot;geoid&quot; = &quot;GEOID&quot;)) %&gt;% 
   st_sf()
 
 glimpse(transit_bivariate_geo)</code></pre>
 <pre><code>## Rows: 402
-## Columns: 5
+## Columns: 9
 ## $ geoid                 &lt;chr&gt; &quot;42003408002&quot;, &quot;42003210700&quot;, &quot;42003220600&quot;, &quot;42…
 ## $ drove_alone           &lt;dbl&gt; 2815, 589, 566, 1224, 466, 1063, 887, 826, 551, …
 ## $ public_transportation &lt;dbl&gt; 8, 189, 146, 260, 100, 215, 262, 342, 670, 61, 3…
 ## $ bi_class              &lt;chr&gt; &quot;3-1&quot;, &quot;1-2&quot;, &quot;1-1&quot;, &quot;2-2&quot;, &quot;1-1&quot;, &quot;2-2&quot;, &quot;1-2&quot;,…
-## $ geometry              &lt;POLYGON [°]&gt; POLYGON ((-79.99 40.63, -79..., POLYGON …</code></pre>
+## $ NAME                  &lt;chr&gt; &quot;Census Tract 4080.02, Allegheny County, Pennsyl…
+## $ variable              &lt;chr&gt; &quot;B08301_001&quot;, &quot;B08301_001&quot;, &quot;B08301_001&quot;, &quot;B0830…
+## $ estimate              &lt;dbl&gt; 3165, 1231, 1110, 1992, 702, 1487, 1317, 1712, 1…
+## $ moe                   &lt;dbl&gt; 231, 199, 116, 189, 80, 233, 163, 185, 257, 104,…
+## $ geometry              &lt;POLYGON [°]&gt; POLYGON ((-79.99 40.61, -79..., POLYGON …</code></pre>
 <pre class="r"><code>table(transit_bivariate_geo$bi_class) %&gt;% 
   enframe(name = &quot;bi_class&quot;, value = &quot;count_tracts&quot;) %&gt;% 
   kbl()</code></pre>
@@ -831,10 +841,16 @@ plot(design)</code></pre>
                                 plot.subtitle = element_text(size = 25),
                                 plot.caption = element_text(size = 25)))</code></pre>
 <p><img src="images/combined_bi_var_transit.png" width="4500" /></p>
-<p>Links:</p>
+<div id="links" class="section level4">
+<h4>Links:</h4>
 <ul>
 <li><a href="https://www.pghcitypaper.com/pittsburgh/low-income-pittsburghers-are-becoming-increasingly-reliant-on-public-transit-bikes-walking-and-alternative-transportation/Content?oid=19059768" class="uri">https://www.pghcitypaper.com/pittsburgh/low-income-pittsburghers-are-becoming-increasingly-reliant-on-public-transit-bikes-walking-and-alternative-transportation/Content?oid=19059768</a></li>
 <li><a href="https://www.pghcitypaper.com/pittsburgh/new-commutes-analyzing-the-changing-ways-pittsburghers-get-to-work/Content?oid=6405396" class="uri">https://www.pghcitypaper.com/pittsburgh/new-commutes-analyzing-the-changing-ways-pittsburghers-get-to-work/Content?oid=6405396</a></li>
 <li><a href="https://www.pghcitypaper.com/pittsburgh/pittsburgh-is-the-7th-least-car-dependent-metro-in-america-study-says/Content?oid=16755873" class="uri">https://www.pghcitypaper.com/pittsburgh/pittsburgh-is-the-7th-least-car-dependent-metro-in-america-study-says/Content?oid=16755873</a></li>
+<li><a href="https://www.nytimes.com/2020/07/09/opinion/sunday/ban-cars-manhattan-cities.html" class="uri">https://www.nytimes.com/2020/07/09/opinion/sunday/ban-cars-manhattan-cities.html</a></li>
+<li><a href="https://www.nytimes.com/2021/03/25/climate/buses-trains-ridership-climate-change.html" class="uri">https://www.nytimes.com/2021/03/25/climate/buses-trains-ridership-climate-change.html</a></li>
+<li><a href="https://nacto.org/publication/transit-street-design-guide/introduction/why/designing-move-people/" class="uri">https://nacto.org/publication/transit-street-design-guide/introduction/why/designing-move-people/</a></li>
+<li><a href="https://rweekly.org/" class="uri">https://rweekly.org/</a></li>
 </ul>
+</div>
 </div>
