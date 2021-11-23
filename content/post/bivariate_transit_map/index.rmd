@@ -138,12 +138,18 @@ acs1_vars %>%
 This downloads the commuter mode data and subtracts the rivers from the census tract polygons so it looks nice on a map:
 ```{r, results='hide'}
 st_erase <- function(x, y) {
-  st_difference(x, st_union(st_combine(y)))
+  st_difference(x, st_union(y))
 }
 
 rivers <- area_water("PA", "Allegheny", class = "sf", progress_bar = F) %>% 
   arrange(desc(AWATER)) %>% 
-  slice(1:3)
+  slice(1:3) %>% 
+  st_simplify()
+
+tracts <- get_acs(geography = "tract", variables = "B08301_001",
+        year = 2019, state = "PA", county = "Allegheny",
+        geometry = T) %>% 
+  st_erase(rivers)
 
 tract_transit <- get_acs(geography = "tract", variables = vars, summary_var = "B08301_001",
                          year = 2019, state = "PA", county = "Allegheny",
@@ -151,6 +157,7 @@ tract_transit <- get_acs(geography = "tract", variables = vars, summary_var = "B
   select(GEOID, variable, estimate, summary_est) %>% 
   st_erase(rivers)
 ```
+
 ```{r}
 tract_transit %>% 
   glimpse()
@@ -218,7 +225,7 @@ transit_bivariate_geo <- tract_transit %>%
            y = public_transportation, 
            style = "fisher", 
            dim = 3) %>% 
-  left_join(tract_transit %>% group_by(GEOID) %>% summarize(), 
+  left_join(tracts, 
             by = c("geoid" = "GEOID")) %>% 
   st_sf()
 
