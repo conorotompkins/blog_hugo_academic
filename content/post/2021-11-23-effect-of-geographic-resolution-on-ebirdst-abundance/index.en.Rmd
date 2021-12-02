@@ -148,4 +148,73 @@ species_table_unnested %>%
   guides(fill = guide_colorsteps())
 ```
 
-This was a useful exercise for me to understand how the geographic resolution and other aggregation of the data can affect estimated metrics, specifically in the citizen science context. 
+This was a useful exercise for me to understand how the geographic resolution and other aggregation of the data can affect estimated metrics, specifically in the citizen science context.
+
+## Update
+
+I made an issue on the [ebirdst](https://github.com/CornellLabofOrnithology/ebirdst/issues/33) Github page and talked to one of the maintainers about their definitions of count and abundance. I now have a much stronger understanding of these variables.
+
+The following code reproduces the graph I attached to the issue:
+```{r}
+library(hrbrthemes)
+theme_set(theme_ipsum())
+
+norcar_table <- crossing(species = c("Northern Cardinal"),
+                          metric = c("occurrence", "count", "abundance"),
+                          resolution = c("hr"))
+
+norcar_metrics <- norcar_table %>% 
+  mutate(data = pmap(list(species, metric, resolution), ~get_species_metric(..1, ..2, ..3))) %>% 
+  mutate(resolution = fct_relevel(resolution, c("hr", "mr", "lr"))) %>% 
+  arrange(species, metric, resolution)
+
+norcar_metrics_unnested <- norcar_metrics %>%
+  unnest(data)
+
+norcar_metrics_wide <- norcar_metrics_unnested %>% 
+  select(species, date, x, y, metric_desc, value) %>% 
+  pivot_wider(id_cols = c(species, date, x, y, metric_desc),
+              names_from = metric_desc,
+              values_from = value)
+
+plot_1 <- norcar_metrics_wide %>% 
+  drop_na(occurrence, count) %>% 
+  ggplot(aes(occurrence, count)) +
+  geom_density_2d_filled(contour_var = "ndensity") +
+  scale_x_percent() +
+  coord_cartesian(ylim = c(0, 12)) +
+  guides(fill = "none") +
+  theme_bw()
+
+plot_2 <- norcar_metrics_wide %>% 
+  drop_na() %>% 
+  ggplot(aes(occurrence, abundance)) +
+  geom_density_2d_filled(contour_var = "ndensity") +
+  scale_x_percent() +
+  coord_cartesian(ylim = c(0, 12)) +
+  guides(fill = "none") +
+  theme_bw()
+
+plot_3 <- norcar_metrics_wide %>%
+  drop_na() %>% 
+  ggplot(aes(count, abundance)) +
+  geom_density_2d_filled(contour_var = "ndensity") +
+  geom_abline() +
+  coord_cartesian(xlim = c(0, 12),
+                  ylim = c(0, 12)) +
+  guides(fill = "none") +
+  theme_bw()
+
+layout <- "
+AACC
+BBCC
+"
+plot_1 + plot_2 + plot_3 + 
+  plot_layout(guides = 'collect', design = layout) +
+  plot_annotation(title = "Northern Cardinal in Allegheny County Pennsylvania")
+
+```
+
+## Citations
+
+Fink, D., T. Auer, A. Johnston, M. Strimas-Mackey, O. Robinson, S. Ligocki, W. Hochachka, C. Wood, I. Davies, M. Iliff, L. Seitz. 2020. eBird Status and Trends, Data Version: 2019; Released: 2020 Cornell Lab of Ornithology, Ithaca, New York. https://doi.org/10.2173/ebirdst.2019

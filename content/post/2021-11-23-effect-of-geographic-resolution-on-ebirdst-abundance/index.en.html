@@ -68,33 +68,33 @@ species_table</code></pre>
   mutate(data = pmap(list(species, metric, resolution), ~get_species_metric(..1, ..2, ..3))) %&gt;% 
   mutate(resolution = fct_relevel(resolution, c(&quot;hr&quot;, &quot;mr&quot;, &quot;lr&quot;))) %&gt;% 
   arrange(species, metric, resolution)</code></pre>
-<pre><code>## 0.529 sec elapsed
-## 17.896 sec elapsed
-## 3.614 sec elapsed
-## 0.175 sec elapsed
-## 11.562 sec elapsed
-## 0.083 sec elapsed
-## 0.32 sec elapsed
-## 13.026 sec elapsed
-## 0.352 sec elapsed
-## 0.287 sec elapsed
-## 17.968 sec elapsed
-## 3.382 sec elapsed
-## 0.151 sec elapsed
-## 11.612 sec elapsed
-## 0.051 sec elapsed
-## 0.273 sec elapsed
-## 13.03 sec elapsed
-## 0.351 sec elapsed
-## 0.163 sec elapsed
-## 18.18 sec elapsed
-## 3.186 sec elapsed
-## 0.167 sec elapsed
-## 11.904 sec elapsed
-## 0.051 sec elapsed
-## 0.276 sec elapsed
-## 13.492 sec elapsed
-## 0.354 sec elapsed</code></pre>
+<pre><code>## 0.482 sec elapsed
+## 18.461 sec elapsed
+## 3.693 sec elapsed
+## 0.336 sec elapsed
+## 11.979 sec elapsed
+## 0.086 sec elapsed
+## 0.42 sec elapsed
+## 13.353 sec elapsed
+## 0.357 sec elapsed
+## 0.365 sec elapsed
+## 18.478 sec elapsed
+## 3.375 sec elapsed
+## 0.184 sec elapsed
+## 12.043 sec elapsed
+## 0.06 sec elapsed
+## 0.4 sec elapsed
+## 13.45 sec elapsed
+## 0.356 sec elapsed
+## 0.166 sec elapsed
+## 18.944 sec elapsed
+## 3.253 sec elapsed
+## 0.284 sec elapsed
+## 12.844 sec elapsed
+## 0.054 sec elapsed
+## 0.527 sec elapsed
+## 14.384 sec elapsed
+## 0.359 sec elapsed</code></pre>
 <pre class="r"><code>species_metrics</code></pre>
 <pre><code>## # A tibble: 9 × 4
 ##   species           metric     resolution data                    
@@ -169,3 +169,77 @@ species_table</code></pre>
   guides(fill = guide_colorsteps())</code></pre>
 <p><img src="{{< blogdown/postref >}}index.en_files/figure-html/unnamed-chunk-7-1.png" width="672" /></p>
 <p>This was a useful exercise for me to understand how the geographic resolution and other aggregation of the data can affect estimated metrics, specifically in the citizen science context.</p>
+<div id="update" class="section level2">
+<h2>Update</h2>
+<p>I made an issue on the <a href="https://github.com/CornellLabofOrnithology/ebirdst/issues/33">ebirdst</a> Github page and talked to one of the maintainers about their definitions of count and abundance. I now have a much stronger understanding of these variables.</p>
+<p>The following code reproduces the graph I attached to the issue:</p>
+<pre class="r"><code>library(hrbrthemes)
+theme_set(theme_ipsum())
+
+norcar_table &lt;- crossing(species = c(&quot;Northern Cardinal&quot;),
+                          metric = c(&quot;occurrence&quot;, &quot;count&quot;, &quot;abundance&quot;),
+                          resolution = c(&quot;hr&quot;))
+
+norcar_metrics &lt;- norcar_table %&gt;% 
+  mutate(data = pmap(list(species, metric, resolution), ~get_species_metric(..1, ..2, ..3))) %&gt;% 
+  mutate(resolution = fct_relevel(resolution, c(&quot;hr&quot;, &quot;mr&quot;, &quot;lr&quot;))) %&gt;% 
+  arrange(species, metric, resolution)</code></pre>
+<pre><code>## 0.497 sec elapsed
+## 23.346 sec elapsed
+## 2.818 sec elapsed
+## 0.578 sec elapsed
+## 23.334 sec elapsed
+## 2.875 sec elapsed
+## 0.453 sec elapsed
+## 24.111 sec elapsed
+## 2.827 sec elapsed</code></pre>
+<pre class="r"><code>norcar_metrics_unnested &lt;- norcar_metrics %&gt;%
+  unnest(data)
+
+norcar_metrics_wide &lt;- norcar_metrics_unnested %&gt;% 
+  select(species, date, x, y, metric_desc, value) %&gt;% 
+  pivot_wider(id_cols = c(species, date, x, y, metric_desc),
+              names_from = metric_desc,
+              values_from = value)
+
+plot_1 &lt;- norcar_metrics_wide %&gt;% 
+  drop_na(occurrence, count) %&gt;% 
+  ggplot(aes(occurrence, count)) +
+  geom_density_2d_filled(contour_var = &quot;ndensity&quot;) +
+  scale_x_percent() +
+  coord_cartesian(ylim = c(0, 12)) +
+  guides(fill = &quot;none&quot;) +
+  theme_bw()
+
+plot_2 &lt;- norcar_metrics_wide %&gt;% 
+  drop_na() %&gt;% 
+  ggplot(aes(occurrence, abundance)) +
+  geom_density_2d_filled(contour_var = &quot;ndensity&quot;) +
+  scale_x_percent() +
+  coord_cartesian(ylim = c(0, 12)) +
+  guides(fill = &quot;none&quot;) +
+  theme_bw()
+
+plot_3 &lt;- norcar_metrics_wide %&gt;%
+  drop_na() %&gt;% 
+  ggplot(aes(count, abundance)) +
+  geom_density_2d_filled(contour_var = &quot;ndensity&quot;) +
+  geom_abline() +
+  coord_cartesian(xlim = c(0, 12),
+                  ylim = c(0, 12)) +
+  guides(fill = &quot;none&quot;) +
+  theme_bw()
+
+layout &lt;- &quot;
+AACC
+BBCC
+&quot;
+plot_1 + plot_2 + plot_3 + 
+  plot_layout(guides = &#39;collect&#39;, design = layout) +
+  plot_annotation(title = &quot;Northern Cardinal in Allegheny County Pennsylvania&quot;)</code></pre>
+<p><img src="{{< blogdown/postref >}}index.en_files/figure-html/unnamed-chunk-8-1.png" width="672" /></p>
+</div>
+<div id="citations" class="section level2">
+<h2>Citations</h2>
+<p>Fink, D., T. Auer, A. Johnston, M. Strimas-Mackey, O. Robinson, S. Ligocki, W. Hochachka, C. Wood, I. Davies, M. Iliff, L. Seitz. 2020. eBird Status and Trends, Data Version: 2019; Released: 2020 Cornell Lab of Ornithology, Ithaca, New York. <a href="https://doi.org/10.2173/ebirdst.2019" class="uri">https://doi.org/10.2173/ebirdst.2019</a></p>
+</div>
