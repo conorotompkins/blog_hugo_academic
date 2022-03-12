@@ -1,14 +1,14 @@
 ---
-title: R Shiny nearPoints with list columns
-author: R package build
-date: '2022-03-11'
-slug: r-shiny-nearpoints-with-list-columns
+title: Making a Venn diagram in Shiny
+author: Conor Tompkins
+date: '2022-03-12'
+slug: shiny-venn-diagram
 categories: []
 tags: []
 subtitle: ''
 summary: ''
 authors: []
-lastmod: '2022-03-11T09:53:16-05:00'
+lastmod: '2022-03-12T10:34:16-05:00'
 featured: no
 image:
   caption: ''
@@ -23,7 +23,7 @@ projects: []
 <div id="introduction" class="section level3">
 <h3>Introduction</h3>
 <p>This blog post is about making Venn diagrams work in Shiny, and the issues I ran into with <code>shiny::nearPoints()</code>. I show how this impacted my initial approach, and discuss the underlying issue.</p>
-<p>TLDR: <code>shiny::nearPoints()</code> doesn’t work with dataframes containing list-columns the way I expected</p>
+<p>TLDR; <code>shiny::nearPoints()</code> doesn’t work with dataframes containing list-columns the way I expected</p>
 </div>
 <div id="background" class="section level3">
 <h3>Background</h3>
@@ -134,7 +134,7 @@ process_data(venn)</code></pre>
   ggplot(aes(fill = name)) +
   geom_sf()</code></pre>
 <p><img src="{{< blogdown/postref >}}index.en_files/figure-html/unnamed-chunk-5-1.png" width="672" /></p>
-<p>I thought using <code>nearPoints</code> would be pretty easy once I intercepted the <code>region</code> object from the preprocessing steps. I was wrong.</p>
+<p>I thought using <code>nearPoints()</code> would be pretty easy once I intercepted the <code>region</code> object from the preprocessing steps. I was wrong.</p>
 </div>
 <div id="shiny-app-error" class="section level3">
 <h3>Shiny app error</h3>
@@ -204,6 +204,9 @@ server &lt;- function(input, output){
 82: output$venn_table
 1: shiny::runApp</code></pre>
 </blockquote>
+</div>
+<div id="the-fix" class="section level3">
+<h3>The fix</h3>
 <p>Wrapping the <code>venn_data</code> object in <code>st_drop_geometry()</code> drops the <code>sf</code> list-column and turns it back into a regular dataframe.</p>
 <pre class="r"><code>library(shiny)
 library(tidyverse)

@@ -1,14 +1,14 @@
 ---
-title: R Shiny nearPoints with list columns
-author: R package build
-date: '2022-03-11'
-slug: r-shiny-nearpoints-with-list-columns
+title: Making a Venn diagram in Shiny
+author: Conor Tompkins
+date: '2022-03-12'
+slug: shiny-venn-diagram
 categories: []
 tags: []
 subtitle: ''
 summary: ''
 authors: []
-lastmod: '2022-03-11T09:53:16-05:00'
+lastmod: '2022-03-12T10:34:16-05:00'
 featured: no
 image:
   caption: ''
@@ -27,7 +27,7 @@ knitr::opts_chunk$set(echo = TRUE,
 
 This blog post is about making Venn diagrams work in Shiny, and the issues I ran into with `shiny::nearPoints()`. I show how this impacted my initial approach, and discuss the underlying issue.
 
-TLDR: `shiny::nearPoints()` doesn't work with dataframes containing list-columns the way I expected
+TLDR; `shiny::nearPoints()` doesn't work with dataframes containing list-columns the way I expected
 
 ### Background
 
@@ -85,7 +85,7 @@ process_data(venn) %>%
   geom_sf()
 ```
 
-I thought using `nearPoints` would be pretty easy once I intercepted the `region` object from the preprocessing steps. I was wrong.
+I thought using `nearPoints()` would be pretty easy once I intercepted the `region` object from the preprocessing steps. I was wrong.
 
 ### Shiny app error
 
@@ -161,6 +161,7 @@ This is the error:
   1: shiny::runApp
   ```
 
+### The fix
 
 Wrapping the `venn_data` object in `st_drop_geometry()` drops the `sf` list-column and turns it back into a regular dataframe.
 ```{r eval = F}
