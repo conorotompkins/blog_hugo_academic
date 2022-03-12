@@ -1,0 +1,265 @@
+---
+title: R Shiny nearPoints with list columns
+author: R package build
+date: '2022-03-11'
+slug: r-shiny-nearpoints-with-list-columns
+categories: []
+tags: []
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2022-03-11T09:53:16-05:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+
+<script src="{{< blogdown/postref >}}index.en_files/header-attrs/header-attrs.js"></script>
+
+
+<div id="introduction" class="section level3">
+<h3>Introduction</h3>
+<p>This blog post is about making Venn diagrams work in Shiny, and the issues I ran into with <code>shiny::nearPoints()</code>. I show how this impacted my initial approach, and discuss the underlying issue.</p>
+<p>TLDR: <code>shiny::nearPoints()</code> doesn’t work with dataframes containing list-columns the way I expected</p>
+</div>
+<div id="background" class="section level3">
+<h3>Background</h3>
+<p>I have been working on a Shiny app that I will use to plan birdwatching trips. It uses the <code>{ebirdst}</code> package to pull abundance data for hundreds of species of birds in 27x27km tiles in North America. A major feature of the app will be the ability to compare how similar two areas (tiles) are. This compares the abundance for a species in a given tile in a given month. I wanted to include a Venn diagram that shows which species are exclusive to each tile. The user can click on the Venn diagram to see the species associated with each segment of the Venn diagram.</p>
+<p>This involves making a venn diagram in <code>ggplot2</code> and extracting the segment that the user clicks on with <code>nearPoints()</code>. This was more challenging than I had anticipated.</p>
+</div>
+<div id="venn-diagram-data" class="section level3">
+<h3>Venn diagram data</h3>
+<p><code>nearPoints()</code> requires:</p>
+<ul>
+<li><code>df</code>: a data frame with x and y coordinates it can interpret</li>
+<li><code>coordinfo</code>: the user click coordinates as captured from the ui</li>
+</ul>
+<p>I use the <code>ggVennDiagram</code> package to make the venn diagram plot. This package uses <code>ggplot2</code>, but does a lot of pre-processing of the data beforehand. This made it difficult to get access to the <code>df</code> for <code>nearPoints()</code>.</p>
+<p>This is an example of a <code>ggVennDiagram</code> plot. It takes a <code>list</code> object, turns that into a dataframe, and then uses <code>sf</code> to draw the circles.</p>
+<pre class="r"><code>library(tidyverse)
+library(ggVennDiagram)
+
+genes &lt;- paste(&quot;gene&quot;,1:100,sep=&quot;&quot;)
+set.seed(20210419)
+x &lt;- list(A=sample(genes,30),
+          B=sample(genes,50))
+
+ggVennDiagram(x)</code></pre>
+<p><img src="{{< blogdown/postref >}}index.en_files/figure-html/unnamed-chunk-1-1.png" width="672" /></p>
+<p>Looking under the hood of <code>ggVennDiagram()</code> shows the pre-processing steps:</p>
+<pre class="r"><code>venn &lt;- Venn(x)
+data &lt;- process_data(venn)</code></pre>
+<p><code>Venn()</code> creates an object with slots representing the two sets A and B</p>
+<pre class="r"><code>Venn(x)</code></pre>
+<pre><code>## An object of class &quot;Venn&quot;
+## Slot &quot;sets&quot;:
+## $A
+##  [1] &quot;gene27&quot; &quot;gene76&quot; &quot;gene57&quot; &quot;gene33&quot; &quot;gene78&quot; &quot;gene39&quot; &quot;gene63&quot; &quot;gene41&quot;
+##  [9] &quot;gene66&quot; &quot;gene17&quot; &quot;gene16&quot; &quot;gene69&quot; &quot;gene75&quot; &quot;gene9&quot;  &quot;gene68&quot; &quot;gene3&quot; 
+## [17] &quot;gene34&quot; &quot;gene54&quot; &quot;gene19&quot; &quot;gene83&quot; &quot;gene2&quot;  &quot;gene40&quot; &quot;gene87&quot; &quot;gene60&quot;
+## [25] &quot;gene61&quot; &quot;gene24&quot; &quot;gene44&quot; &quot;gene93&quot; &quot;gene53&quot; &quot;gene7&quot; 
+## 
+## $B
+##  [1] &quot;gene84&quot;  &quot;gene36&quot;  &quot;gene37&quot;  &quot;gene47&quot;  &quot;gene91&quot;  &quot;gene46&quot;  &quot;gene92&quot; 
+##  [8] &quot;gene33&quot;  &quot;gene67&quot;  &quot;gene73&quot;  &quot;gene25&quot;  &quot;gene5&quot;   &quot;gene63&quot;  &quot;gene2&quot;  
+## [15] &quot;gene83&quot;  &quot;gene56&quot;  &quot;gene77&quot;  &quot;gene10&quot;  &quot;gene12&quot;  &quot;gene95&quot;  &quot;gene76&quot; 
+## [22] &quot;gene53&quot;  &quot;gene99&quot;  &quot;gene19&quot;  &quot;gene31&quot;  &quot;gene86&quot;  &quot;gene80&quot;  &quot;gene65&quot; 
+## [29] &quot;gene48&quot;  &quot;gene100&quot; &quot;gene89&quot;  &quot;gene58&quot;  &quot;gene35&quot;  &quot;gene30&quot;  &quot;gene21&quot; 
+## [36] &quot;gene44&quot;  &quot;gene72&quot;  &quot;gene18&quot;  &quot;gene45&quot;  &quot;gene42&quot;  &quot;gene1&quot;   &quot;gene27&quot; 
+## [43] &quot;gene90&quot;  &quot;gene14&quot;  &quot;gene43&quot;  &quot;gene26&quot;  &quot;gene96&quot;  &quot;gene17&quot;  &quot;gene16&quot; 
+## [50] &quot;gene29&quot; 
+## 
+## 
+## Slot &quot;names&quot;:
+## [1] &quot;A&quot; &quot;B&quot;</code></pre>
+<p><code>process_data()</code> turns those slots into dataframes with <code>sf</code> columns representing the segment polygons.</p>
+<pre class="r"><code>venn &lt;- Venn(x)
+process_data(venn)</code></pre>
+<pre><code>## An object of class &quot;VennPlotData&quot;
+## Slot &quot;setEdge&quot;:
+## Simple feature collection with 2 features and 5 fields
+## Geometry type: LINESTRING
+## Dimension:     XY
+## Bounding box:  xmin: -3.997986 ymin: -3.999497 xmax: 8 ymax: 3.999497
+## CRS:           NA
+## # A tibble: 2 × 6
+##   id                                        geometry component item  count name 
+##   &lt;chr&gt;                                 &lt;LINESTRING&gt; &lt;chr&gt;     &lt;nam&gt; &lt;int&gt; &lt;chr&gt;
+## 1 1     (4 0, 3.991947 0.2536957, 3.967819 0.506369… setEdge   &lt;chr&gt;    30 A    
+## 2 2     (8 0, 7.991947 0.2536957, 7.967819 0.506369… setEdge   &lt;chr&gt;    50 B    
+## 
+## Slot &quot;setLabel&quot;:
+## Simple feature collection with 2 features and 3 fields
+## Geometry type: POINT
+## Dimension:     XY
+## Bounding box:  xmin: -1 ymin: 4.3 xmax: 5 ymax: 4.3
+## CRS:           NA
+## # A tibble: 2 × 4
+##   id    geometry component name 
+##   &lt;chr&gt;  &lt;POINT&gt; &lt;chr&gt;     &lt;chr&gt;
+## 1 1     (-1 4.3) setLabel  A    
+## 2 2      (5 4.3) setLabel  B    
+## 
+## Slot &quot;region&quot;:
+## Simple feature collection with 3 features and 5 fields
+## Geometry type: POLYGON
+## Dimension:     XY
+## Bounding box:  xmin: -3.997986 ymin: -3.999497 xmax: 8 ymax: 3.999497
+## CRS:           NA
+## # A tibble: 3 × 6
+##   id                                        geometry component item  count name 
+##   &lt;chr&gt;                                    &lt;POLYGON&gt; &lt;chr&gt;     &lt;lis&gt; &lt;int&gt; &lt;chr&gt;
+## 1 1     ((1.998059 3.462897, 1.78432 3.330279, 1.57… region    &lt;chr&gt;    19 A    
+## 2 2     ((8 0, 7.991947 -0.2536957, 7.967819 -0.506… region    &lt;chr&gt;    39 B    
+## 3 12    ((2.108902 3.398902, 2.320228 3.258304, 2.5… region    &lt;chr&gt;    11 A..B</code></pre>
+<p>The <code>region</code> slot is most important for my purposes. It contains the <code>sf</code> polygons for the segments and the distinct counts exclusive to each segment.</p>
+<pre class="r"><code>process_data(venn) %&gt;% 
+  .@region</code></pre>
+<pre><code>## Simple feature collection with 3 features and 5 fields
+## Geometry type: POLYGON
+## Dimension:     XY
+## Bounding box:  xmin: -3.997986 ymin: -3.999497 xmax: 8 ymax: 3.999497
+## CRS:           NA
+## # A tibble: 3 × 6
+##   id                                        geometry component item  count name 
+##   &lt;chr&gt;                                    &lt;POLYGON&gt; &lt;chr&gt;     &lt;lis&gt; &lt;int&gt; &lt;chr&gt;
+## 1 1     ((1.998059 3.462897, 1.78432 3.330279, 1.57… region    &lt;chr&gt;    19 A    
+## 2 2     ((8 0, 7.991947 -0.2536957, 7.967819 -0.506… region    &lt;chr&gt;    39 B    
+## 3 12    ((2.108902 3.398902, 2.320228 3.258304, 2.5… region    &lt;chr&gt;    11 A..B</code></pre>
+<pre class="r"><code>process_data(venn) %&gt;% 
+  .@region %&gt;% 
+  ggplot(aes(fill = name)) +
+  geom_sf()</code></pre>
+<p><img src="{{< blogdown/postref >}}index.en_files/figure-html/unnamed-chunk-5-1.png" width="672" /></p>
+<p>I thought using <code>nearPoints</code> would be pretty easy once I intercepted the <code>region</code> object from the preprocessing steps. I was wrong.</p>
+</div>
+<div id="shiny-app-error" class="section level3">
+<h3>Shiny app error</h3>
+<p>This basic Shiny app will reproduce the error that <code>nearPoints()</code> generates:</p>
+<pre class="r"><code>library(shiny)
+library(tidyverse)
+library(ggVennDiagram)
+library(sf)
+
+#ui
+ui &lt;- fluidPage(
+  
+  titlePanel(&quot;Shiny Venn Diagram&quot;),
+  
+  mainPanel(
+    plotOutput(&quot;venn_diagram&quot;, click = &quot;plot_click&quot;),
+    tableOutput(&quot;venn_table&quot;)
+  )
+)
+
+genes &lt;- paste(&quot;gene&quot;,1:1000,sep=&quot;&quot;)
+set.seed(20210419)
+x &lt;- list(A=sample(genes,300),
+          B=sample(genes,525))
+
+venn &lt;- Venn(x)
+venn_data &lt;- process_data(venn)@region %&gt;% 
+  mutate(centroid = st_point_on_surface(geometry),
+         x = map_dbl(centroid, 1),
+         y = map_dbl(centroid, 2)) %&gt;% 
+  select(x, y, name, geometry)
+
+#server
+server &lt;- function(input, output){
+  
+  output$venn_diagram &lt;- renderPlot({
+    
+    venn_data %&gt;% 
+      ggplot(aes(x, y, fill = name, label = name)) +
+      geom_sf() +
+      geom_label()
+    
+  })
+  
+  output$venn_table &lt;- renderTable({
+    
+    req(input$plot_click)
+    
+    nearPoints(venn_data, #this is the issue
+               input$plot_click,
+               threshold = 100)
+    
+  })
+  
+}</code></pre>
+<p>This is the error:</p>
+<blockquote>
+<pre><code>Warning: Error in &lt;-: number of items to replace is not a multiple of replacement length
+104: print.xtable
+98: transform
+97: func
+95: f
+94: Reduce
+85: do
+84: hybrid_chain
+83: renderFunc
+82: output$venn_table
+1: shiny::runApp</code></pre>
+</blockquote>
+<p>Wrapping the <code>venn_data</code> object in <code>st_drop_geometry()</code> drops the <code>sf</code> list-column and turns it back into a regular dataframe.</p>
+<pre class="r"><code>library(shiny)
+library(tidyverse)
+library(ggVennDiagram)
+library(sf)
+
+#ui
+ui &lt;- fluidPage(
+  
+  titlePanel(&quot;Shiny Venn Diagram&quot;),
+  
+  mainPanel(
+    plotOutput(&quot;venn_diagram&quot;, click = &quot;plot_click&quot;),
+    tableOutput(&quot;venn_table&quot;)
+  )
+)
+
+genes &lt;- paste(&quot;gene&quot;,1:1000,sep=&quot;&quot;)
+set.seed(20210419)
+x &lt;- list(A=sample(genes,300),
+          B=sample(genes,525))
+
+venn &lt;- Venn(x)
+venn_data &lt;- process_data(venn)@region %&gt;% 
+  mutate(centroid = st_point_on_surface(geometry),
+         x = map_dbl(centroid, 1),
+         y = map_dbl(centroid, 2)) %&gt;% 
+  select(x, y, name, geometry)
+
+#server
+server &lt;- function(input, output){
+  
+  output$venn_diagram &lt;- renderPlot({
+    
+    venn_data %&gt;% 
+      ggplot(aes(x, y, fill = name, label = name)) +
+      geom_sf() +
+      geom_label()
+    
+  })
+  
+  output$venn_table &lt;- renderTable({
+    
+    req(input$plot_click)
+    
+    nearPoints(st_drop_geometry(venn_data), #the fix
+               input$plot_click,
+               threshold = 100)
+    
+  })
+  
+}</code></pre>
+</div>
+<div id="working-shiny-app" class="section level3">
+<h3>Working Shiny App</h3>
+<p>This is a working example of a Venn diagram in Shiny. <code>input$plot_click</code> captures the coordinates of the click and <code>nearPoints()</code> returns a dataframe of the information about the segment the user clicked on. The ID of the segment is in the <code>name</code> column.</p>
+<iframe src="https://conorotompkins.shinyapps.io/nearpoints_listcols/?_ga=2.224776090.1006061501.1647011895-2001510754.1647011895" height="550" width="720" style="border: 1px solid #464646;" data-external="1">
+</iframe>
+</div>
