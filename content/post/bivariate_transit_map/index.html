@@ -28,7 +28,6 @@ image:
 projects: []
 ---
 
-<script src="{{< blogdown/postref >}}index_files/header-attrs/header-attrs.js"></script>
 <script src="{{< blogdown/postref >}}index_files/kePrint/kePrint.js"></script>
 <link href="{{< blogdown/postref >}}index_files/lightable/lightable.css" rel="stylesheet" />
 
@@ -397,7 +396,7 @@ tract_transit &lt;- get_acs(geography = &quot;tract&quot;, variables = vars, sum
 ## $ variable    &lt;chr&gt; &quot;Drove alone&quot;, &quot;Public transportation&quot;, &quot;Drove alone&quot;, &quot;Pu…
 ## $ estimate    &lt;dbl&gt; 2815, 8, 589, 189, 566, 146, 1224, 260, 466, 100, 1063, 21…
 ## $ summary_est &lt;dbl&gt; 3165, 3165, 1231, 1231, 1110, 1110, 1992, 1992, 702, 702, …
-## $ geometry    &lt;POLYGON [°]&gt; POLYGON ((-79.99 40.61, -79..., POLYGON ((-79.99 4…</code></pre>
+## $ geometry    &lt;MULTIPOLYGON [°]&gt; MULTIPOLYGON (((-79.99 40.6..., MULTIPOLYGON …</code></pre>
 <p>As discussed earlier, public transit is not the majority commuting mode in most areas:</p>
 <pre class="r"><code>tract_transit %&gt;% 
   st_drop_geometry() %&gt;% 
@@ -470,7 +469,7 @@ glimpse(transit_bivariate_geo)</code></pre>
 ## $ variable              &lt;chr&gt; &quot;B08301_001&quot;, &quot;B08301_001&quot;, &quot;B08301_001&quot;, &quot;B0830…
 ## $ estimate              &lt;dbl&gt; 3165, 1231, 1110, 1992, 702, 1487, 1317, 1712, 1…
 ## $ moe                   &lt;dbl&gt; 231, 199, 116, 189, 80, 233, 163, 185, 257, 104,…
-## $ geometry              &lt;POLYGON [°]&gt; POLYGON ((-79.99 40.61, -79..., POLYGON …</code></pre>
+## $ geometry              &lt;MULTIPOLYGON [°]&gt; MULTIPOLYGON (((-79.99 40.6..., MUL…</code></pre>
 <pre class="r"><code>table(transit_bivariate_geo$bi_class) %&gt;% 
   enframe(name = &quot;bi_class&quot;, value = &quot;count_tracts&quot;) %&gt;% 
   kbl()</code></pre>
