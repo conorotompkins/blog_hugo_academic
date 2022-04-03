@@ -1,0 +1,295 @@
+---
+title: Suburbanization of Allegheny County
+author: R package build
+date: '2022-04-03'
+slug: suburbanization-of-allegheny-county
+categories: []
+tags: []
+subtitle: ''
+summary: ''
+authors: [Conor Tompkins]
+lastmod: '2022-04-03T15:12:59-04:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+
+
+
+<div id="configuration-and-load-data" class="section level3">
+<h3>Configuration and load data</h3>
+<pre class="r"><code>library(tidyverse)
+library(sf)
+library(units)
+library(hrbrthemes)
+library(gganimate)
+library(scales)
+
+theme_set(theme_ipsum())</code></pre>
+<pre class="r"><code>ac_housing &lt;- st_read(&quot;data/HHUUD10.gdb&quot;) %&gt;% 
+  rename(geometry = Shape) %&gt;% 
+  mutate(UY1 = na_if(UY1, 2035),
+         UY2 = na_if(UY2, 2035)) %&gt;% 
+  filter(STATE == &quot;PA&quot;,
+         COUNTY == &quot;Allegheny&quot;) %&gt;% 
+  select(STATE, COUNTY, GEOID10, UY1, UY2, starts_with(&quot;hu&quot;), starts_with(&quot;sqmi&quot;), starts_with(&quot;pdev&quot;)) %&gt;% 
+  tigris::erase_water()</code></pre>
+<pre><code>## Reading layer `HHUUD10&#39; from data source 
+##   `/Users/conortompkins/github_repos/blog_hugo_academic/content/post/2022-04-03-suburbanization-of-allegheny-county/data/HHUUD10.gdb&#39; 
+##   using driver `OpenFileGDB&#39;
+## Simple feature collection with 72271 features and 29 fields
+## Geometry type: MULTIPOLYGON
+## Dimension:     XY
+## Bounding box:  xmin: -2356114 ymin: -1337505 xmax: 2258244 ymax: 1565782
+## Projected CRS: USA_Contiguous_Albers_Equal_Area_Conic</code></pre>
+<pre class="r"><code>best_crs &lt;- ac_housing %&gt;% 
+  crsuggest::suggest_crs() %&gt;% 
+  slice_head(n = 1) %&gt;% 
+  select(crs_code) %&gt;% 
+  pull() %&gt;% 
+  as.numeric()
+
+ac_housing &lt;- ac_housing %&gt;% 
+  st_transform(crs = best_crs)</code></pre>
+<div id="fix-date-formatting" class="section level4">
+<h4>Fix date formatting</h4>
+<pre class="r"><code>ac_housing_hu &lt;- ac_housing %&gt;% 
+  select(-starts_with(&quot;pdev&quot;)) %&gt;% 
+  pivot_longer(cols = starts_with(&quot;hu&quot;), names_to = &quot;year&quot;, values_to = &quot;housing_units&quot;)
+
+year_lookup &lt;- ac_housing_hu %&gt;% 
+  st_drop_geometry() %&gt;% 
+  distinct(year) %&gt;% 
+  mutate(year_fixed = c(1940, 1950, 1960, 1970, 1980, 1990, 2000, 2010, 2019))
+
+ac_housing_hu &lt;- ac_housing_hu %&gt;% 
+  left_join(year_lookup) %&gt;% 
+  select(-year) %&gt;% 
+  rename(year = year_fixed)</code></pre>
+</div>
+</div>
+<div id="overall-trend" class="section level2">
+<h2>Overall trend</h2>
+<pre class="r"><code>ac_housing_hu %&gt;% 
+  st_drop_geometry() %&gt;% 
+  group_by(year) %&gt;% 
+  summarize(housing_units = sum(housing_units)) %&gt;% 
+  ungroup() %&gt;% 
+  ggplot(aes(year, housing_units, group = 1)) +
+  geom_line() +
+  geom_point() +
+  scale_y_comma() +
+  labs(x = &quot;Year&quot;,
+       y  = &quot;Housing Units&quot;)</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-4-1.png" width="672" /></p>
+<pre class="r"><code>ac_housing_hu %&gt;% 
+  st_drop_geometry() %&gt;% 
+  group_by(year) %&gt;% 
+  summarize(housing_units = sum(housing_units)) %&gt;% 
+  ungroup() %&gt;% 
+  mutate(diff = housing_units - lag(housing_units)) %&gt;% 
+  mutate(year = fct_inorder(as.character(year))) %&gt;%  
+  ggplot(aes(year, diff, group = 1)) +
+  geom_line() +
+  geom_point() +
+  scale_y_comma(prefix = &quot;+ &quot;) +
+  coord_cartesian(ylim = c(0, 90000)) +
+  labs(x = &quot;Year&quot;,
+       y  = &quot;Change in Housing Units&quot;)</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-5-1.png" width="672" /></p>
+</div>
+<div id="change-from-1940-to-2019" class="section level2">
+<h2>Change from 1940 to 2019</h2>
+<pre class="r"><code>hu_diff &lt;- ac_housing_hu %&gt;% 
+  group_by(GEOID10) %&gt;% 
+  filter(year == min(year) | year == max(year)) %&gt;% 
+  ungroup() %&gt;% 
+  select(GEOID10, year, housing_units) %&gt;% 
+  pivot_wider(names_from = year, values_from = housing_units) %&gt;% 
+  mutate(diff = `2019` - `1940`) %&gt;% 
+  st_as_sf()</code></pre>
+<pre class="r"><code>hu_diff %&gt;% 
+  ggplot() +
+  geom_sf(aes(fill = diff), color = NA) +
+  scale_fill_viridis_c(labels = comma) +
+  labs(title = &quot;Housing Unit Change from 1940-2019&quot;,
+       fill = &quot;Difference&quot;) +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.text.x = element_blank(),
+        axis.text.y = element_blank())</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-7-1.png" width="672" /></p>
+<pre class="r"><code>slope_graph_anim &lt;- hu_diff %&gt;% 
+  pivot_longer(cols = c(`1940`, `2019`), names_to = &quot;year&quot;, values_to = &quot;housing_units&quot;) %&gt;% 
+  ggplot(aes(year, housing_units)) +
+  geom_line(aes(group = GEOID10), alpha = .1) +
+  geom_point(aes(group = str_c(year, GEOID10)), alpha = .05) +
+  transition_reveal(diff) +
+  labs(title = &quot;Housing unit change from 1940-2019&quot;,
+       subtitle = &quot;From most units in 1940 to least&quot;,
+       x = &quot;Year&quot;,
+       y = &quot;Housing Units&quot;,
+       alpha = &quot;Difference&quot;) +
+  theme(panel.grid.minor.y = element_blank(),
+        panel.grid.major.y = element_blank(),
+        panel.grid.major.x = element_blank(),
+        axis.title.x = element_blank())
+
+slope_graph_anim &lt;- animate(slope_graph_anim)
+
+slope_graph_anim</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-8-1.gif" /><!-- --></p>
+<pre class="r"><code>ac_housing_hu %&gt;% 
+  ggplot() +
+  geom_sf(aes(fill = housing_units), color = NA) +
+  scale_fill_viridis_c(&quot;Housing Units&quot;, labels = comma) +
+  facet_wrap(~year) +
+  theme_bw() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.text.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks = element_blank())</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-9-1.png" width="672" /></p>
+<pre class="r"><code>ac_housing_hu %&gt;% 
+  group_by(GEOID10) %&gt;% 
+  filter(housing_units == max(housing_units)) %&gt;% 
+  ungroup() %&gt;% 
+  rename(max_year = year) %&gt;% 
+  mutate(max_year = as.factor(max_year)) %&gt;% 
+  ggplot() +
+  geom_sf(aes(fill = max_year), color = NA) +
+  scale_fill_viridis_d(direction = -1) +
+  labs(title = &quot;Year of peak housing&quot;,
+       fill = &quot;Peak&quot;) +
+  theme(panel.grid.major = element_blank(),
+        axis.text.x = element_blank(),
+        axis.text.y = element_blank())</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-10-1.png" width="672" /></p>
+</div>
+<div id="land-use" class="section level2">
+<h2>Land use</h2>
+<pre class="r"><code>ac_dev &lt;- ac_housing %&gt;% 
+  select(GEOID10, starts_with(&quot;pdev&quot;)) %&gt;% 
+  pivot_longer(cols = starts_with(&quot;pdev&quot;), names_to = &quot;year&quot;, values_to = &quot;pct_dev&quot;) 
+
+dev_years &lt;- ac_dev %&gt;% 
+  st_drop_geometry() %&gt;% 
+  distinct(year) %&gt;% 
+  mutate(year_fixed = c(1992, 2001, 2011))
+
+ac_dev &lt;- ac_dev %&gt;% 
+  left_join(dev_years) %&gt;% 
+  select(-year) %&gt;% 
+  rename(year = year_fixed)</code></pre>
+<pre class="r"><code>ac_dev %&gt;% 
+  ggplot() +
+  geom_sf(aes(fill = pct_dev), color = NA) +
+  facet_wrap(~year) +
+  scale_fill_viridis_c(labels = percent) +
+  labs(title = &quot;Percent of land that is developed&quot;,
+       fill = NULL) +
+  theme_bw() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.text.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks = element_blank())</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-12-1.png" width="672" /></p>
+</div>
+<div id="housing-density" class="section level2">
+<h2>Housing density</h2>
+<pre class="r"><code>ac_sqmi &lt;- ac_housing %&gt;% 
+  select(GEOID10, starts_with(&quot;sqmi&quot;)) %&gt;% 
+  st_drop_geometry() %&gt;% 
+  as_tibble() %&gt;% 
+  pivot_longer(starts_with(&quot;sqmi&quot;), names_to = &quot;year&quot;, values_to = &quot;sqmi&quot;)
+
+ac_sqmi_year &lt;- ac_sqmi %&gt;% 
+  distinct(year) %&gt;% 
+  mutate(year_fixed = c(1940, 1950, 1960, 1970, 1980, 1990, 2000, 2010, 2019))
+
+ac_sqmi &lt;- ac_sqmi %&gt;% 
+  left_join(ac_sqmi_year) %&gt;% 
+  select(-year) %&gt;% 
+  rename(year = year_fixed)
+
+ac_density &lt;- ac_housing_hu %&gt;% 
+  select(GEOID10, year, housing_units) %&gt;% 
+  left_join(ac_sqmi) %&gt;% 
+  mutate(density = housing_units / sqmi,
+         density = round(density, 0) / 1000,
+         year = as.factor(year))</code></pre>
+<pre class="r"><code>histogram_anim &lt;- ac_density %&gt;% 
+  st_drop_geometry() %&gt;% 
+  select(GEOID10, year, density) %&gt;% 
+  mutate(density = round(density, 0)) %&gt;% 
+  count(year, density) %&gt;% 
+  ggplot(aes(density, n, fill = density)) +
+  geom_col() +
+  scale_fill_viridis_c() +
+  scale_y_continuous(expand = c(0,0)) +
+  coord_cartesian(ylim = c(0, 160)) +
+  transition_states(year) +
+  labs(title = &quot;Shift to less density over time&quot;,
+       subtitle = &quot;{closest_state}&quot;,
+       x = &quot;Density (units per sq. mile)&quot;,
+       y = &quot;Count of census tracts&quot;,
+       fill = &quot;Density&quot;) +
+  theme(legend.position = &quot;bottom&quot;)
+
+histogram_anim &lt;- animate(histogram_anim)
+
+histogram_anim</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-14-1.gif" /><!-- --></p>
+<pre class="r"><code>scatter_plot_anim &lt;- ac_density %&gt;% 
+  ggplot(aes(sqmi, housing_units, color = density)) +
+  geom_point() +
+  scale_color_viridis_c() +
+  transition_states(year) +
+  labs(title = &quot;More housing built in larger outlying areas over time&quot;,
+       subtitle = &quot;Density in {closest_state}&quot;,
+       x = &quot;Square miles&quot;,
+       y = &quot;Housing Units&quot;,
+       color = &quot;Units per sq. mile&quot;)
+
+scatter_plot_anim &lt;- animate(scatter_plot_anim)
+
+scatter_plot_anim</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-15-1.gif" /><!-- --></p>
+</div>
+<div id="housing-moves-away-from-downtown-area" class="section level2">
+<h2>Housing moves away from Downtown area</h2>
+<pre class="r"><code>downtown_tract &lt;- ac_housing_hu %&gt;% 
+  filter(GEOID10 == &quot;42003020100&quot;) %&gt;% 
+  distinct(GEOID10, geometry) %&gt;% 
+  mutate(centroid = st_point_on_surface(geometry)) %&gt;% 
+  st_set_geometry(&quot;centroid&quot;) %&gt;% 
+  select(-geometry)</code></pre>
+<pre class="r"><code>distance_anim &lt;- ac_housing_hu %&gt;% 
+  select(GEOID10, year, housing_units) %&gt;% 
+  mutate(centroid = st_point_on_surface(geometry),
+         geoid = str_c(GEOID10, year, sep = &quot;_&quot;),
+         year = as.integer(year)
+         ) %&gt;% 
+  mutate(distance_to_downtown = st_distance(centroid, downtown_tract) %&gt;% as.numeric() / 5280) %&gt;% 
+  ggplot(aes(distance_to_downtown, housing_units)) +
+  geom_point(aes(group = GEOID10), alpha = .3) +
+  geom_smooth(aes(group = year)) +
+  scale_x_continuous() +
+  scale_y_comma() +
+  transition_states(year, 
+                    state_length = 10) +
+  labs(title = &quot;Housing has moved farther away from downtown&quot;,
+       subtitle = &quot;{closest_state}&quot;,
+       x = &quot;Miles from downtown&quot;,
+       y = &quot;Housing units&quot;)
+
+distance_anim &lt;- animate(distance_anim)
+
+distance_anim</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-17-1.gif" /><!-- --></p>
+</div>

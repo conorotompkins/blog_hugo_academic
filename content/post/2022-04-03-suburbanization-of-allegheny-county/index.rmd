@@ -31,6 +31,7 @@ library(sf)
 library(units)
 library(hrbrthemes)
 library(gganimate)
+library(scales)
 
 theme_set(theme_ipsum())
 ```
@@ -69,7 +70,6 @@ year_lookup <- ac_housing_hu %>%
   mutate(year_fixed = c(1940, 1950, 1960, 1970, 1980, 1990, 2000, 2010, 2019))
 
 ac_housing_hu <- ac_housing_hu %>% 
-  #st_drop_geometry() %>% 
   left_join(year_lookup) %>% 
   select(-year) %>% 
   rename(year = year_fixed)
@@ -127,7 +127,7 @@ hu_diff <- ac_housing_hu %>%
 hu_diff %>% 
   ggplot() +
   geom_sf(aes(fill = diff), color = NA) +
-  scale_fill_viridis_c() +
+  scale_fill_viridis_c(labels = comma) +
   labs(title = "Housing Unit Change from 1940-2019",
        fill = "Difference") +
   theme(panel.grid.major = element_blank(),
@@ -162,15 +162,31 @@ slope_graph_anim
 ac_housing_hu %>% 
   ggplot() +
   geom_sf(aes(fill = housing_units), color = NA) +
-  scale_fill_viridis_c("Housing Units") +
+  scale_fill_viridis_c("Housing Units", labels = comma) +
   facet_wrap(~year) +
   theme_bw() +
   theme(panel.grid.major = element_blank(),
         panel.grid.minor = element_blank(),
         axis.text.x = element_blank(),
         axis.text.y = element_blank(),
-        axis.ticks = element_blank(),
-        legend.position = "top")
+        axis.ticks = element_blank())
+```
+
+```{r}
+ac_housing_hu %>% 
+  group_by(GEOID10) %>% 
+  filter(housing_units == max(housing_units)) %>% 
+  ungroup() %>% 
+  rename(max_year = year) %>% 
+  mutate(max_year = as.factor(max_year)) %>% 
+  ggplot() +
+  geom_sf(aes(fill = max_year), color = NA) +
+  scale_fill_viridis_d(direction = -1) +
+  labs(title = "Year of peak housing",
+       fill = "Peak") +
+  theme(panel.grid.major = element_blank(),
+        axis.text.x = element_blank(),
+        axis.text.y = element_blank())
 ```
 
 ## Land use
@@ -196,9 +212,9 @@ ac_dev %>%
   ggplot() +
   geom_sf(aes(fill = pct_dev), color = NA) +
   facet_wrap(~year) +
-  scale_fill_viridis_c() +
+  scale_fill_viridis_c(labels = percent) +
   labs(title = "Percent of land that is developed",
-       fill = "%") +
+       fill = NULL) +
   theme_bw() +
   theme(panel.grid.major = element_blank(),
         panel.grid.minor = element_blank(),
@@ -237,8 +253,7 @@ ac_density <- ac_housing_hu %>%
 histogram_anim <- ac_density %>% 
   st_drop_geometry() %>% 
   select(GEOID10, year, density) %>% 
-  mutate(#density = cut_width(density, width = 1, boundary = .5)
-    density = round(density, 0)) %>% 
+  mutate(density = round(density, 0)) %>% 
   count(year, density) %>% 
   ggplot(aes(density, n, fill = density)) +
   geom_col() +
@@ -268,29 +283,11 @@ scatter_plot_anim <- ac_density %>%
        subtitle = "Density in {closest_state}",
        x = "Square miles",
        y = "Housing Units",
-       color = "Density")
+       color = "Units per sq. mile")
 
 scatter_plot_anim <- animate(scatter_plot_anim)
 
 scatter_plot_anim
-```
-
-
-```{r}
-ac_density %>% 
-  group_by(GEOID10) %>% 
-  filter(density == max(density)) %>% 
-  ungroup() %>% 
-  rename(max_density_year = year) %>% 
-  st_transform(crs = best_crs) %>% 
-  ggplot() +
-  geom_sf(aes(fill = max_density_year), color = NA) +
-  scale_fill_viridis_d(direction = -1) +
-  labs(title = "Year of peak housing density",
-       fill = "Year") +
-  theme(panel.grid.major = element_blank(),
-        axis.text.x = element_blank(),
-        axis.text.y = element_blank())
 ```
 
 ## Housing moves away from Downtown area
