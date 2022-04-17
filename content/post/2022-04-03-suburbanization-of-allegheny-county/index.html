@@ -8,7 +8,7 @@ tags: []
 subtitle: ''
 summary: ''
 authors: [Conor Tompkins]
-lastmod: "2022-04-16 12:09:07"
+lastmod: "2022-04-17 12:44:55"
 featured: no
 image:
   caption: ''
@@ -33,9 +33,13 @@ library(hrbrthemes)
 library(gganimate)
 library(scales)
 library(leaflet)
+library(leaflet.extras)
+library(widgetframe)
 
-theme_set(theme_bw(base_size = 13))</code></pre>
-<p>The dataset is available in multiple formats, but I chose the Esri geodatabase format because plays nice with <code>{sf}</code>. The dataset uses the value <code>2035</code> in some numeric fields to indicate missing data, so I replace those values with <code>NA</code>. I also use the fancy new <code>tigris::erase_water()</code> function to easily “erase” the water from the census tracts to make Allegheny County look like Allegheny County.</p>
+theme_set(theme_bw(base_size = 13))
+
+options(digits = 4, scipen = 999)</code></pre>
+<p>The dataset is available in multiple formats, but I chose the Esri geodatabase format because plays nice with <code>{sf}</code>. The dataset uses the value <code>2035</code> in some numeric fields to indicate missing data, so I replace those values with <code>NA</code>. I also use the fancy new <code>tigris::erase_water()</code> function to easily “erase” the water from the census tracts to make the rivers stand out.</p>
 <pre class="r"><code>ac_housing &lt;- st_read(&quot;data/HHUUD10.gdb&quot;) %&gt;% 
   rename(geometry = Shape) %&gt;% 
   mutate(UY1 = na_if(UY1, 2035),
@@ -97,7 +101,7 @@ glimpse(ac_housing)</code></pre>
 <h2>Overall trend</h2>
 <div id="fix-date-formatting" class="section level4">
 <h4>Fix date formatting</h4>
-<p>Since the data comes in a wide format, I pivot it long and fix up the new year column to make it easy to graph with.</p>
+<p>Since the data comes in a wide format, I pivot it long and fix up the year column to make it easy to graph with.</p>
 <pre class="r"><code>ac_housing_hu &lt;- ac_housing %&gt;% 
   select(GEOID10, starts_with(&quot;hu&quot;)) %&gt;% 
   pivot_longer(cols = starts_with(&quot;hu&quot;), names_to = &quot;year&quot;, values_to = &quot;housing_units&quot;)
@@ -116,10 +120,10 @@ glimpse(ac_housing_hu)</code></pre>
 <pre><code>## Rows: 3,618
 ## Columns: 4
 ## $ GEOID10       &lt;chr&gt; &quot;42003560500&quot;, &quot;42003560500&quot;, &quot;42003560500&quot;, &quot;4200356050…
-## $ geometry      &lt;POLYGON [US_survey_foot]&gt; POLYGON ((1373906 410181.9,..., POL…
-## $ housing_units &lt;dbl&gt; 1348.9231, 1509.1244, 1514.7159, 1440.5436, 1423.6741, 1…
+## $ geometry      &lt;POLYGON [US_survey_foot]&gt; POLYGON ((1373906 410182, 1..., POL…
+## $ housing_units &lt;dbl&gt; 1349, 1509, 1515, 1441, 1424, 1433, 1381, 1349, 1487, 13…
 ## $ year          &lt;dbl&gt; 1940, 1950, 1960, 1970, 1980, 1990, 2000, 2010, 2019, 19…</code></pre>
-<p>The number of housing units in the county stagnated after 1980, which is expected given the collapse of the steel industry.</p>
+<p>The number of housing units in the county stagnated after 1960, which is expected given the collapse of the steel industry.</p>
 <pre class="r"><code>ac_housing_hu %&gt;% 
   st_drop_geometry() %&gt;% 
   mutate(year = as.character(year) %&gt;% fct_inorder()) %&gt;% 
@@ -133,7 +137,7 @@ glimpse(ac_housing_hu)</code></pre>
   labs(x = &quot;Year&quot;,
        y  = &quot;Housing units&quot;)</code></pre>
 <p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-4-1.png" width="672" /></p>
-<p>The decennial difference in “gross” housing units shows that growth stagnated from 1960-2010.</p>
+<p>The decennial difference in “gross” housing units also shows that growth stagnated after 1960.</p>
 <pre class="r"><code>ac_housing_hu %&gt;% 
   st_drop_geometry() %&gt;% 
   mutate(year = as.character(year) %&gt;% fct_inorder()) %&gt;% 
@@ -146,7 +150,7 @@ glimpse(ac_housing_hu)</code></pre>
   geom_point() +
   scale_y_comma(prefix = &quot;+ &quot;) +
   coord_cartesian(ylim = c(0, 90000)) +
-  labs(title = &quot;Growth stagnated from 1960-2010&quot;,
+  labs(title = &quot;Growth stagnated after 1960&quot;,
        x = &quot;Year&quot;,
        y  = &quot;Change in housing units&quot;)</code></pre>
 <p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-5-1.png" width="672" /></p>
@@ -154,7 +158,7 @@ glimpse(ac_housing_hu)</code></pre>
 </div>
 <div id="change-from-1940-to-2019" class="section level2">
 <h2>Change from 1940 to 2019</h2>
-<p>This map shows the areas that gained or lost the most housing units from 1940-2019. Dense housing around industrial areas along the Allegheny and Monongahela Rivers was erased. Homestead and Braddock stand out.</p>
+<p>This interactive map shows the areas that gained or lost the most housing units from 1940-2019. Dense housing around industrial areas along the Allegheny and Monongahela Rivers was erased. Homestead and Braddock stand out.</p>
 <pre class="r"><code>hu_diff &lt;- ac_housing_hu %&gt;% 
   group_by(GEOID10) %&gt;% 
   filter(year == min(year) | year == max(year)) %&gt;% 
@@ -162,8 +166,9 @@ glimpse(ac_housing_hu)</code></pre>
   select(GEOID10, year, housing_units) %&gt;% 
   pivot_wider(names_from = year, names_prefix = &quot;units_&quot;, values_from = housing_units) %&gt;% 
   mutate(diff = units_2019 - units_1940) %&gt;% 
-  st_as_sf()</code></pre>
-<pre class="r"><code>pal &lt;- colorNumeric(
+  st_as_sf()
+
+pal &lt;- colorNumeric(
   palette = &quot;viridis&quot;,
   domain = hu_diff$diff)
 
@@ -175,21 +180,25 @@ leaflet_map &lt;- hu_diff %&gt;%
   setView(lat = 40.441606, lng = -80.010957, zoom = 10) %&gt;% 
   addProviderTiles(providers$Stamen.TonerLite,
                    options = providerTileOptions(noWrap = TRUE,
-                                                 minZoom = 9
-                   )) %&gt;% 
+                                                 minZoom = 9),
+                   group = &quot;Base map&quot;) %&gt;% 
   addPolygons(popup = ~ diff_label,
               fillColor = ~pal(diff),
               fillOpacity = .7,
               color = &quot;black&quot;,
-              weight = 1) %&gt;% 
+              weight = 1,
+              group = &quot;Housing&quot;) %&gt;% 
   addLegend(&quot;bottomright&quot;, pal = pal, values = ~diff,
             title = &quot;Difference&quot;,
-            opacity = 1)
+            opacity = 1) %&gt;% 
+  addLayersControl(overlayGroups = c(&quot;Base map&quot;, &quot;Housing&quot;),
+                   options = layersControlOptions(collapsed = FALSE)) %&gt;% 
+  addFullscreenControl()
 
-widgetframe::frameWidget(leaflet_map)</code></pre>
+frameWidget(leaflet_map, options=frameOptions(allowfullscreen = TRUE))</code></pre>
 <div id="htmlwidget-1" style="width:100%;height:480px;" class="widgetframe html-widget"></div>
-<script type="application/json" data-for="htmlwidget-1">{"x":{"url":"index_files/figure-html//widgets/widget_unnamed-chunk-7.html","options":{"xdomain":"*","allowfullscreen":false,"lazyload":false}},"evals":[],"jsHooks":[]}</script>
-<p>The North Side and the Hill were targets of <a href="https://www.bloomberg.com/news/features/2021-06-24/can-a-demolished-black-neighborhood-build-back-better">“urban renewal”</a> in the middle of the century. Dense housing in heavily African-American areas were demolished to make way for an <a href="https://en.wikipedia.org/wiki/Civic_Arena_(Pittsburgh)">opera house</a>, the 279 and 579 highways, and parking lots. The highways are directly related to the white flight exodus to the suburbs, especially in the west and north. Those highways made it easy for the new suburbanites to commute longer distances in single passenger vehicles.</p>
+<script type="application/json" data-for="htmlwidget-1">{"x":{"url":"index_files/figure-html//widgets/widget_unnamed-chunk-6.html","options":{"xdomain":"*","allowfullscreen":true,"lazyload":false}},"evals":[],"jsHooks":[]}</script>
+<p>The North Side and the Hill were targets of <a href="https://www.bloomberg.com/news/features/2021-06-24/can-a-demolished-black-neighborhood-build-back-better">“urban renewal”</a> in the middle of the century. Dense housing in heavily African-American communities were demolished to make way for an <a href="https://en.wikipedia.org/wiki/Civic_Arena_(Pittsburgh)">opera house</a>, the 279 and 579 highways, and parking lots. The highways are directly related to the white flight exodus to the suburbs, especially in the west and north. Those highways made it easy for the new suburbanites to commute longer distances in single passenger vehicles.</p>
 <p>These graphs shows that the areas with the most housing in 1940 lost thousands of units, while outlying areas gained thousands of units.</p>
 <pre class="r"><code>slope_graph_anim &lt;- hu_diff %&gt;% 
   pivot_longer(cols = c(units_1940, units_2019), names_to = &quot;year&quot;, values_to = &quot;housing_units&quot;) %&gt;% 
@@ -210,10 +219,10 @@ widgetframe::frameWidget(leaflet_map)</code></pre>
         panel.border = element_blank(),
         axis.title.x = element_blank())
 
-slope_graph_anim &lt;- animate(slope_graph_anim, fps = 20)
+slope_graph_anim &lt;- animate(slope_graph_anim, duration = 10, fps = 20, end_pause = 60)
 
 slope_graph_anim</code></pre>
-<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-8-1.gif" /><!-- --></p>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-7-1.gif" /><!-- --></p>
 <pre class="r"><code>hu_diff %&gt;% 
   ggplot(aes(units_1940, units_2019)) +
   geom_abline(lty = 2) +
@@ -222,9 +231,9 @@ slope_graph_anim</code></pre>
   scale_x_comma() +
   scale_y_comma() +
   labs(title = &quot;Housing unit loss&quot;,
-       x = &quot;1940 units&quot;,
-       y = &quot;2019 units&quot;)</code></pre>
-<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-9-1.png" width="672" /></p>
+       x = &quot;Units in 1940&quot;,
+       y = &quot;Units in 2019&quot;)</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-8-1.png" width="672" /></p>
 <div id="moving-north-and-west" class="section level4">
 <h4>Moving north and west</h4>
 <p>These maps show the estimates of housing units for each decennial period. Outlying areas in the north and west, directly served by the new highway system, gained thousands of housing units.</p>
@@ -239,7 +248,51 @@ slope_graph_anim</code></pre>
         axis.text.x = element_blank(),
         axis.text.y = element_blank(),
         axis.ticks = element_blank())</code></pre>
-<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-10-1.png" width="672" /></p>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-9-1.png" width="672" /></p>
+<p>Geographically larger Census tracts gained more of the % of total housing over time.</p>
+<pre class="r"><code>ac_sqmi &lt;- ac_housing %&gt;% 
+  select(GEOID10, starts_with(&quot;sqmi&quot;)) %&gt;% 
+  st_drop_geometry() %&gt;% 
+  as_tibble() %&gt;% 
+  pivot_longer(starts_with(&quot;sqmi&quot;), names_to = &quot;year&quot;, values_to = &quot;sqmi&quot;)
+
+ac_sqmi_year &lt;- ac_sqmi %&gt;% 
+  distinct(year) %&gt;% 
+  mutate(year_fixed = c(1940, 1950, 1960, 1970, 1980, 1990, 2000, 2010, 2019))
+
+ac_sqmi &lt;- ac_sqmi %&gt;% 
+  left_join(ac_sqmi_year) %&gt;% 
+  select(-year) %&gt;% 
+  rename(year = year_fixed)
+
+ac_density &lt;- ac_housing_hu %&gt;% 
+  select(GEOID10, year, housing_units) %&gt;% 
+  left_join(ac_sqmi) %&gt;% 
+  mutate(density = housing_units / sqmi)
+
+curve_anim &lt;- ac_density %&gt;% 
+  st_drop_geometry() %&gt;% 
+  select(GEOID10, year, housing_units, sqmi) %&gt;% 
+  mutate(year = as.character(year) %&gt;% as.factor()) %&gt;% 
+    arrange(year, sqmi) %&gt;% 
+  group_by(year) %&gt;% 
+  mutate(housing_units_cumsum = cumsum(housing_units),
+         pct_units = housing_units_cumsum / sum(housing_units)) %&gt;% 
+  ggplot(aes(sqmi, pct_units, color = year)) +
+  geom_line() +
+  scale_y_percent() +
+  labs(title = &quot;Housing moves to outlying areas over time&quot;,
+       subtitle = &quot;Year: {closest_state}&quot;,
+       x = &quot;Square miles&quot;,
+       y = &quot;Cumulative percent of units&quot;,
+       color = &quot;Year&quot;) +
+  transition_states(year) +
+  shadow_mark()
+
+curve_anim &lt;- animate(curve_anim, duration = 10, fps = 20, end_pause = 60)
+
+curve_anim</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-10-1.gif" /><!-- --></p>
 </div>
 <div id="housing-peaks" class="section level4">
 <h4>Housing peaks</h4>
@@ -249,10 +302,10 @@ slope_graph_anim</code></pre>
   filter(housing_units == max(housing_units)) %&gt;% 
   ungroup() %&gt;% 
   rename(max_year = year) %&gt;% 
-  mutate(max_year = as.factor(max_year)) %&gt;% 
+  #mutate(max_year = as.factor(max_year)) %&gt;% 
   ggplot() +
   geom_sf(aes(fill = max_year), color = NA) +
-  scale_fill_viridis_d(direction = -1) +
+  scale_fill_viridis_c(direction = -1) +
   labs(title = &quot;Year of peak housing&quot;,
        fill = &quot;Peak&quot;) +
   theme(panel.grid.major = element_blank(),
@@ -265,14 +318,15 @@ slope_graph_anim</code></pre>
 </div>
 <div id="housing-moves-away-from-the-center" class="section level2">
 <h2>Housing moves away from the center</h2>
-<p>A major trend from 1940-2019 is the significant shift in housing from around the core to outlying suburbs.</p>
+<p>A major trend from 1940-2019 is the significant shift in housing from around the core to outlying suburbs. This code calculates the distance between each tract and the “Downtown” tract (42003020100), and plots the number of units compared to that distance.</p>
 <pre class="r"><code>downtown_tract &lt;- ac_housing_hu %&gt;% 
   filter(GEOID10 == &quot;42003020100&quot;) %&gt;% 
   distinct(GEOID10, geometry) %&gt;% 
   mutate(centroid = st_point_on_surface(geometry)) %&gt;% 
   st_set_geometry(&quot;centroid&quot;) %&gt;% 
-  select(-geometry)</code></pre>
-<pre class="r"><code>distance_anim &lt;- ac_housing_hu %&gt;% 
+  select(-geometry)
+
+distance_anim &lt;- ac_housing_hu %&gt;% 
   select(GEOID10, year, housing_units) %&gt;% 
   mutate(centroid = st_point_on_surface(geometry),
          geoid = str_c(GEOID10, year, sep = &quot;_&quot;),
@@ -294,51 +348,11 @@ slope_graph_anim</code></pre>
 distance_anim &lt;- animate(distance_anim)
 
 distance_anim</code></pre>
-<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-13-1.gif" /><!-- --></p>
-</div>
-<div id="housing-density" class="section level2">
-<h2>Housing density</h2>
-<p>Housing density has become a major discussion point in urban planning over the past 20 years. Higher density areas have a <a href="https://news.berkeley.edu/2014/01/06/suburban-sprawl-cancels-carbon-footprint-savings-of-dense-urban-cores/">lower per capita carbon footprint</a> due to non-car commute modes and agglomeration effects. Higher density also does not expand the <a href="https://en.wikipedia.org/wiki/Wildland%E2%80%93urban_interface">wildland-urban interface</a>. This leaves more land for the natural environment, moves humans away from dangers such as wildfires, and lowers the frequency of interaction between wild animals and humans, which can transfer disease (coronavirus, <a href="https://www.pbs.org/wgbh/nova/article/control-ebola-epidemic-caused-cutting-rainforest/">ebola</a>).</p>
-<p>Unfortunately, Allegheny County has dehoused its core urban center over the past century.</p>
-<pre class="r"><code>ac_sqmi &lt;- ac_housing %&gt;% 
-  select(GEOID10, starts_with(&quot;sqmi&quot;)) %&gt;% 
-  st_drop_geometry() %&gt;% 
-  as_tibble() %&gt;% 
-  pivot_longer(starts_with(&quot;sqmi&quot;), names_to = &quot;year&quot;, values_to = &quot;sqmi&quot;)
-
-ac_sqmi_year &lt;- ac_sqmi %&gt;% 
-  distinct(year) %&gt;% 
-  mutate(year_fixed = c(1940, 1950, 1960, 1970, 1980, 1990, 2000, 2010, 2019))
-
-ac_sqmi &lt;- ac_sqmi %&gt;% 
-  left_join(ac_sqmi_year) %&gt;% 
-  select(-year) %&gt;% 
-  rename(year = year_fixed)
-
-ac_density &lt;- ac_housing_hu %&gt;% 
-  select(GEOID10, year, housing_units) %&gt;% 
-  left_join(ac_sqmi) %&gt;% 
-  mutate(density = housing_units / sqmi)</code></pre>
-<pre class="r"><code>scatter_plot_anim &lt;- ac_density %&gt;% 
-  ggplot(aes(sqmi, housing_units, color = density)) +
-  geom_point() +
-  scale_color_viridis_c() +
-  transition_states(year) +
-  labs(title = &quot;More housing built in outlying areas over time&quot;,
-       subtitle = &quot;Density in {closest_state}&quot;,
-       x = &quot;Square miles&quot;,
-       y = &quot;Housing units&quot;,
-       color = &quot;Units per sq. mile&quot;) +
-  theme(panel.grid.minor = element_blank())
-
-scatter_plot_anim &lt;- animate(scatter_plot_anim, fps = 20)
-
-scatter_plot_anim</code></pre>
-<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-15-1.gif" /><!-- --></p>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-12-1.gif" /><!-- --></p>
 </div>
 <div id="land-use" class="section level2">
 <h2>Land use</h2>
-<p>The HHUUD10 also contains estimates for the percentage of land in a tract that is “developed” for the years 1992, 2001, and 2011. “Developed” in this context means “covered by an urban land use”.</p>
+<p>The HHUUD10 data also contains estimates for the percentage of land in a tract that is “developed” for the years 1992, 2001, and 2011. “Developed” in this context means “covered by an urban land use”.</p>
 <pre class="r"><code>ac_dev &lt;- ac_housing %&gt;% 
   select(GEOID10, starts_with(&quot;pdev&quot;)) %&gt;% 
   pivot_longer(cols = starts_with(&quot;pdev&quot;), names_to = &quot;year&quot;, values_to = &quot;pct_dev&quot;) 
@@ -351,8 +365,9 @@ dev_years &lt;- ac_dev %&gt;%
 ac_dev &lt;- ac_dev %&gt;% 
   left_join(dev_years) %&gt;% 
   select(-year) %&gt;% 
-  rename(year = year_fixed)</code></pre>
-<pre class="r"><code>ac_dev %&gt;% 
+  rename(year = year_fixed)
+
+ac_dev %&gt;% 
   ggplot() +
   geom_sf(aes(fill = pct_dev), color = NA) +
   facet_wrap(~year) +
@@ -365,10 +380,6 @@ ac_dev &lt;- ac_dev %&gt;%
         axis.text.x = element_blank(),
         axis.text.y = element_blank(),
         axis.ticks = element_blank())</code></pre>
-<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-17-1.png" width="672" />
-I find it interesting that the South Hills area shows more development than the North Hills. I would have expected more development in the North Hills due to the McKnight Road area and Wexford. My guess is that the tracts in the North Hills cover more land area, which drives down the % that is developed. Conversely, the tracts in the South Hills cover less land area, and less of the South Hills is useful for housing construction because of steep hills.</p>
-</div>
-<div id="leafet-map" class="section level2">
-<h2>Leafet map</h2>
-<p>Insert leaflet map of 1940-2019 change here</p>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-13-1.png" width="672" />
+I find it interesting that the South Hills area shows more development than the North Hills. I would have expected more development in the North Hills due to the McKnight Road area and Wexford. My guess is that the tracts in the North Hills cover more land area, which drives down the % that is developed. Conversely, the tracts in the South Hills cover less land area, and less of the South Hills is useful for development because of steep hills and creeks.</p>
 </div>
