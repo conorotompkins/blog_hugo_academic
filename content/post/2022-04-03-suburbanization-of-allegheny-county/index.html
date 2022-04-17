@@ -8,7 +8,7 @@ tags: []
 subtitle: ''
 summary: ''
 authors: [Conor Tompkins]
-lastmod: "2022-04-17 12:44:55"
+lastmod: "2022-04-17 18:05:01"
 featured: no
 image:
   caption: ''
@@ -227,10 +227,13 @@ slope_graph_anim</code></pre>
   ggplot(aes(units_1940, units_2019)) +
   geom_abline(lty = 2) +
   geom_point(alpha = .2) +
+  annotate(&quot;text&quot;, x = 3500, y = 3800, label = &quot;No change&quot;, angle = 45) +
+  annotate(&quot;text&quot;, x = 300, y = 4500, label = &quot;Gain&quot;) +
+  annotate(&quot;text&quot;, x = 4300, y = 100, label = &quot;Loss&quot;) +
   tune::coord_obs_pred() +
   scale_x_comma() +
   scale_y_comma() +
-  labs(title = &quot;Housing unit loss&quot;,
+  labs(title = &quot;Housing unit change&quot;,
        x = &quot;Units in 1940&quot;,
        y = &quot;Units in 2019&quot;)</code></pre>
 <p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-8-1.png" width="672" /></p>
@@ -273,11 +276,12 @@ ac_density &lt;- ac_housing_hu %&gt;%
 curve_anim &lt;- ac_density %&gt;% 
   st_drop_geometry() %&gt;% 
   select(GEOID10, year, housing_units, sqmi) %&gt;% 
-  mutate(year = as.character(year) %&gt;% as.factor()) %&gt;% 
-    arrange(year, sqmi) %&gt;% 
+  mutate(year = as.character(year) %&gt;% fct_inorder()) %&gt;% 
+  arrange(year, sqmi) %&gt;% 
   group_by(year) %&gt;% 
   mutate(housing_units_cumsum = cumsum(housing_units),
          pct_units = housing_units_cumsum / sum(housing_units)) %&gt;% 
+  ungroup() %&gt;% 
   ggplot(aes(sqmi, pct_units, color = year)) +
   geom_line() +
   scale_y_percent() +
@@ -289,7 +293,7 @@ curve_anim &lt;- ac_density %&gt;%
   transition_states(year) +
   shadow_mark()
 
-curve_anim &lt;- animate(curve_anim, duration = 10, fps = 20, end_pause = 60)
+curve_anim &lt;- animate(curve_anim, duration = 10, fps = 20)
 
 curve_anim</code></pre>
 <p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-10-1.gif" /><!-- --></p>
@@ -302,7 +306,6 @@ curve_anim</code></pre>
   filter(housing_units == max(housing_units)) %&gt;% 
   ungroup() %&gt;% 
   rename(max_year = year) %&gt;% 
-  #mutate(max_year = as.factor(max_year)) %&gt;% 
   ggplot() +
   geom_sf(aes(fill = max_year), color = NA) +
   scale_fill_viridis_c(direction = -1) +
@@ -381,5 +384,10 @@ ac_dev %&gt;%
         axis.text.y = element_blank(),
         axis.ticks = element_blank())</code></pre>
 <p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-13-1.png" width="672" />
-I find it interesting that the South Hills area shows more development than the North Hills. I would have expected more development in the North Hills due to the McKnight Road area and Wexford. My guess is that the tracts in the North Hills cover more land area, which drives down the % that is developed. Conversely, the tracts in the South Hills cover less land area, and less of the South Hills is useful for development because of steep hills and creeks.</p>
+I find it interesting that more of the South Hills is developed than the North Hills. I would have expected more development in the North Hills due to the McKnight Road area and Wexford. My guess is that the tracts in the North Hills cover more land area, which decreases the % that is developed. Conversely, the tracts in the South Hills cover less land area, and less of the South Hills is useful for development because of steep hills and creeks. This concentrates development in a smaller area.</p>
+</div>
+<div id="conclusion" class="section level2">
+<h2>Conclusion</h2>
+<p>Over the past 80 years, Allegheny County has lost a significant amount of housing in its core urban area. Much of this is directly related to the collapse of the steel industry and “urban renewal”. At the same time, new housing development has been pushed out to the suburbs. This is a loss in terms of housing density, which has become a major discussion point in urban planning over the past 20 years.</p>
+<p>Higher density areas have a <a href="https://news.berkeley.edu/2014/01/06/suburban-sprawl-cancels-carbon-footprint-savings-of-dense-urban-cores/">lower per capita carbon footprint</a> due to non-car commute modes and agglomeration effects. Higher density also does not expand the <a href="https://en.wikipedia.org/wiki/Wildland%E2%80%93urban_interface">wildland-urban interface</a>. This leaves more land for the natural environment, moves humans away from dangers such as wildfires, and lowers the frequency of interaction between wild animals and humans, which can transfer disease (coronavirus, <a href="https://www.pbs.org/wgbh/nova/article/control-ebola-epidemic-caused-cutting-rainforest/">ebola</a>). It will be interesting to see whether the suburbanization trend continues after the initial shocks of COVID-19 pandemic subside.</p>
 </div>
