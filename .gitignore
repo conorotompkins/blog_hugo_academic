@@ -5,6 +5,7 @@
 .DS_Store
 Thumbs.db
 .hugo_build.lock
+.index.rmd.lock
 
 /public/
 /resources/
