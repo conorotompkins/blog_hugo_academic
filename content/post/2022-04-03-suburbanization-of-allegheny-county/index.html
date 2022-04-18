@@ -1,14 +1,14 @@
 ---
 title: Suburbanization of Allegheny County
 author: R package build
-date: '2022-04-10'
+date: '2022-04-18'
 slug: suburbanization-of-allegheny-county
 categories: []
 tags: []
 subtitle: ''
 summary: ''
 authors: [Conor Tompkins]
-lastmod: "2022-04-17 18:05:01"
+lastmod: "2022-04-18 10:25:45"
 featured: no
 image:
   caption: ''
@@ -22,7 +22,7 @@ projects: []
 <script src="{{< blogdown/postref >}}index_files/widgetframe-binding/widgetframe.js"></script>
 
 
-<p>This March, researchers at the University of Georgia and Florida State University <a href="https://twitter.com/snmarkley/status/1502234165521092610">released</a> the <a href="https://osf.io/fzv5e/">HHUUD10 dataset</a>, which contains estimates of the number of housing units for decennial census years 1940-2010 and 2019. The data uses 2010 census tracts, which allows for historical comparison of housing trends across constant geometry. The <a href="https://www.nature.com/articles/s41597-022-01184-x">full paper</a> explains the approach.</p>
+<p>This March, researchers at the University of Georgia and Florida State University <a href="https://twitter.com/snmarkley/status/1502234165521092610">released</a> the <a href="https://osf.io/fzv5e/">HHUUD10 dataset</a>, which contains estimates of the number of housing units for decennial census years 1940-2010 and 2019. A “housing unit” could be a studio apartment or 5 bedroom single-family home. The data uses 2010 census tracts, which allows for historical comparison of housing trends across constant geometry. The <a href="https://www.nature.com/articles/s41597-022-01184-x">full paper</a> explains the approach.</p>
 <p>This paper and the dataset can be used for a wide variety of socioeconomic issues. I will focus on suburbanization trends in the Pittsburgh area.</p>
 <div id="configuration-and-load-data" class="section level4">
 <h4>Configuration and load data</h4>
@@ -233,7 +233,7 @@ slope_graph_anim</code></pre>
   tune::coord_obs_pred() +
   scale_x_comma() +
   scale_y_comma() +
-  labs(title = &quot;Housing unit change&quot;,
+  labs(title = &quot;Change in housing units&quot;,
        x = &quot;Units in 1940&quot;,
        y = &quot;Units in 2019&quot;)</code></pre>
 <p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-8-1.png" width="672" /></p>
