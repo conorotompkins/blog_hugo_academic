@@ -1,0 +1,26 @@
+---
+title: Forecasting Pittsburgh Potholes with {fable}
+author: Conor Tompkins
+date: '2023-10-28'
+slug: forecasting-pittsburgh-potholes-with-fable
+categories: []
+tags: []
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2023-10-28T09:50:42-04:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+
+Intro
+
+Pothole data from 311
+
+Train/test approach
+
+Cross-validation approach
