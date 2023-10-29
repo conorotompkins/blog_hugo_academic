@@ -1,7 +1,7 @@
 ---
 authors:
 - admin
-bio: Data analyst in the Pittsburgh area with an interest in data visualization, statistical programming, and civic data.
+bio: Data scientist in the Pittsburgh area with an interest in data visualization, statistical programming, and civic data.
 education:
   courses:
   - course: MA Public and International Affairs
@@ -20,9 +20,6 @@ interests:
 #   url: ""
 #role: Data Analyst
 social:
-- icon: twitter
-  icon_pack: fab
-  link: https://twitter.com/conor_tompkins
 - icon: github
   icon_pack: fab
   link: https://github.com/conorotompkins
@@ -39,4 +36,4 @@ user_groups:
 - Visitors
 ---
 
-I am a data analyst in the Pittsburgh area with an interest in data visualization, statistical programming, and civic data.
+I am a data scientist in the Pittsburgh area with an interest in data visualization, statistical programming, and civic data.
