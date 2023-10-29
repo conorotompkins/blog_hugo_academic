@@ -129,7 +129,7 @@ pothole_df |>
 
 ## Train/test approach
 
-The classic method for determining the accuracy of any model is to train the model on a subset of the data, and test the model against another subset. This code splits the time series into 80% training and 20% testing sets.
+The classic method for determining the accuracy of any model is to train the model on a subset of the data and test the model against another subset. This code splits the time series into 80% training and 20% testing sets.
 
 ```{r}
 #split into train/test and forecast

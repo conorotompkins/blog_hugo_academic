@@ -138,7 +138,7 @@ outliers |&gt;
 </div>
 <div id="traintest-approach" class="section level2">
 <h2>Train/test approach</h2>
-<p>The classic method for determining the accuracy of any model is to train the model on a subset of the data, and test the model against another subset. This code splits the time series into 80% training and 20% testing sets.</p>
+<p>The classic method for determining the accuracy of any model is to train the model on a subset of the data and test the model against another subset. This code splits the time series into 80% training and 20% testing sets.</p>
 <pre class="r"><code>#split into train/test and forecast
 data_test &lt;- pothole_df |&gt; 
   slice_tail(prop = .2)
