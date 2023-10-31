@@ -1,0 +1,238 @@
+---
+title: Forecasting potholes with exogenous variables
+author: Conor Tomkpins
+date: '2023-10-31'
+slug: forecasting-potholes-with-exogenous-variables
+categories: []
+tags: []
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2023-10-31T19:24:54-04:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      message = FALSE,
+                      warning = FALSE)
+```
+
+```{r}
+library(fpp3)
+library(tidyverse)
+library(janitor)
+library(future)
+library(hrbrthemes)
+library(GSODR)
+library(tictoc)
+
+theme_set(theme_ipsum())
+
+plan(multisession)
+
+options(scipen = 999, digits = 4)
+```
+
+
+```{r}
+#read in pothole data
+pothole_data <- read_csv("data/wprdc_311.csv") |> 
+  clean_names() |> 
+  filter(request_type == "Potholes") |> 
+  mutate(created_yearmonth = yearmonth(created_on))
+```
+
+
+```{r}
+pothole_df <- pothole_data |> 
+  group_by(created_yearmonth, request_type) |> 
+  summarize(report_count = n()) |> 
+  ungroup() |> 
+  as_tsibble()
+```
+
+
+```{r}
+#cv
+pothole_cv <- stretch_tsibble(pothole_df, .step = 1, .init = 24)
+
+pothole_cv |> 
+  count(.id)
+```
+
+
+```{r, echo=FALSE}
+#read in weather data
+#weather_data <- read_csv("inputs/allegheny_county_weather_data.csv")
+```
+
+```{r}
+load(system.file("extdata", "isd_history.rda", package = "GSODR"))
+
+weather_raw <- get_GSOD(years = c(2014:2023), station = "725205-14762") |> 
+  as_tibble() |> 
+  clean_names()
+```
+
+```{r}
+weather_data <- weather_raw |> 
+  select(stnid, name, date = yearmoda, min, temp, max, prcp, sndp) |> 
+  mutate(max_min_diff = max - min)
+
+glimpse(weather_data)
+```
+
+```{r}
+weather_data <- weather_data |> 
+  mutate(date_ym = yearmonth(date)) |> 
+  group_by(date_ym) |> 
+  summarize(min_avg = mean(min),
+            temp_avg = mean(temp),
+            max_avg = mean(max),
+            prcp_sum = sum(prcp)) |> 
+  ungroup() |> 
+  mutate(temp_diff = max_avg - min_avg) |> 
+  mutate(across(c(min_avg, temp_avg, max_avg, temp_diff, prcp_sum), ~lag(.x, 1), .names = "{.col}_lag1")) |> 
+  mutate(across(c(min_avg, temp_avg, max_avg, temp_diff, prcp_sum), ~lag(.x, 2), .names = "{.col}_lag2")) |> 
+  mutate(across(c(min_avg, temp_avg, max_avg, temp_diff, prcp_sum), ~lag(.x, 3), .names = "{.col}_lag3"))
+
+glimpse(weather_data)
+```
+
+
+```{r}
+weather_data |> 
+  ggplot(aes(date_ym, temp_avg)) +
+  geom_ribbon(aes(ymin = min_avg, ymax = max_avg), alpha = .3) +
+  geom_line()
+```
+
+
+```{r}
+weather_data |> 
+  ggplot(aes(date_ym, prcp_sum)) +
+  geom_col()
+```
+
+
+```{r}
+weather_data |> 
+  mutate(year = as.factor(year(date_ym))) |> 
+  ggplot(aes(min_avg, prcp_sum, color = year)) +
+  geom_point() +
+  geom_vline(xintercept = 0) +
+  facet_wrap(vars(year))
+```
+
+
+```{r}
+pothole_df <- pothole_df |> 
+  left_join(weather_data, by = c("created_yearmonth" = "date_ym"))
+```
+
+
+```{r}
+pothole_df |> 
+  ggplot(aes(temp_avg, report_count)) +
+  geom_point()
+```
+
+```{r}
+pothole_df |> 
+  ggplot(aes(prcp_sum, report_count)) +
+  geom_point()
+```
+
+```{r}
+pothole_df |> 
+  as_tibble() |> 
+  select(report_count, contains("temp_avg")) |> 
+  pivot_longer(contains("temp")) |> 
+  ggplot(aes(value, report_count)) +
+  geom_point() +
+  geom_smooth() +
+  facet_wrap(vars(name), scales = "free")
+```
+
+```{r}
+pothole_df |> 
+  as_tibble() |> 
+  select(report_count, contains("temp_diff")) |> 
+  pivot_longer(contains("temp")) |> 
+  ggplot(aes(value, report_count)) +
+  geom_point() +
+  geom_smooth() +
+  facet_wrap(vars(name), scales = "free")
+```
+
+
+```{r}
+pothole_df |> 
+  as_tibble() |> 
+  select(report_count, contains("min")) |> 
+  pivot_longer(contains("min")) |> 
+  ggplot(aes(value, report_count)) +
+  geom_point() +
+  geom_smooth() +
+  facet_wrap(vars(name), scales = "free")
+```
+
+```{r}
+pothole_df |> 
+  as_tibble() |> 
+  select(report_count, contains("max")) |> 
+  pivot_longer(contains("max")) |> 
+  ggplot(aes(value, report_count)) +
+  geom_point() +
+  geom_smooth() +
+  facet_wrap(vars(name), scales = "free")
+```
+
+```{r}
+pothole_df |> 
+  as_tibble() |> 
+  select(report_count, contains("prcp")) |> 
+  pivot_longer(contains("prcp")) |> 
+  ggplot(aes(value, report_count)) +
+  geom_point() +
+  geom_smooth() +
+  facet_wrap(vars(name), scales = "free")
+```
+
+```{r}
+pothole_df |> 
+  as_tibble() |> 
+  select(report_count, contains("diff")) |> 
+  pivot_longer(contains("diff")) |> 
+  ggplot(aes(value, report_count)) +
+  geom_point() +
+  geom_smooth() +
+  facet_wrap(vars(name), scales = "free")
+```
+
+
+```{r}
+#384.208 sec elapsed
+tic()
+  model_df_exo <- pothole_cv |> 
+    model(ets = ETS(log(report_count + 1)),
+          ts_lm = TSLM(log(report_count + 1) ~ trend() + season()),
+          ts_lm_exo = TSLM(log(report_count + 1) ~ trend() + season() + temp_avg + min_avg + max_avg + prcp_sum),
+          ts_lm_exo_lag1 = TSLM(log(report_count + 1) ~ trend() + season() + temp_avg_lag1 + min_avg_lag1 + max_avg_lag1 + prcp_sum_lag1),
+          ts_lm_exo_lag2 = TSLM(log(report_count + 1) ~ trend() + season() + temp_avg_lag2 + min_avg_lag2 + max_avg_lag2 + prcp_sum_lag2),
+          ts_lm_exo_lag3 = TSLM(log(report_count + 1) ~ trend() + season() + temp_avg_lag3 + min_avg_lag3 + max_avg_lag3 + prcp_sum_lag3),
+          arima = ARIMA(log(report_count + 1)),
+          arima_exo = ARIMA(log(report_count + 1) ~ temp_avg + min_avg + max_avg + prcp_sum),
+          arima_exo_lag1 = ARIMA(log(report_count + 1) ~ temp_avg_lag1 + min_avg_lag1 + max_avg_lag1 + prcp_sum_lag1),
+          arima_exo_lag2 = ARIMA(log(report_count + 1) ~ temp_avg_lag2 + min_avg_lag2 + max_avg_lag2 + prcp_sum_lag2),
+          arima_exo_lag3 = ARIMA(log(report_count + 1) ~ temp_avg_lag3 + min_avg_lag3 + max_avg_lag3 + prcp_sum_lag3)
+          )
+toc()
+```
+
