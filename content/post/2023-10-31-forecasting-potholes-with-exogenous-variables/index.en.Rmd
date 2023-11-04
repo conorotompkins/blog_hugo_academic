@@ -15,6 +15,8 @@ image:
   focal_point: ''
   preview_only: no
 projects: []
+editor_options: 
+  chunk_output_type: console
 ---
 
 ```{r setup, include=FALSE}
@@ -22,6 +24,11 @@ knitr::opts_chunk$set(echo = TRUE,
                       message = FALSE,
                       warning = FALSE)
 ```
+
+### Intro
+
+
+### Set up data
 
 ```{r}
 library(fpp3)
@@ -57,20 +64,12 @@ pothole_df <- pothole_data |>
   as_tsibble()
 ```
 
-
-```{r}
-#cv
-pothole_cv <- stretch_tsibble(pothole_df, .step = 1, .init = 24)
-
-pothole_cv |> 
-  count(.id)
-```
-
-
 ```{r, echo=FALSE}
 #read in weather data
 #weather_data <- read_csv("inputs/allegheny_county_weather_data.csv")
 ```
+
+### Weather data
 
 ```{r}
 load(system.file("extdata", "isd_history.rda", package = "GSODR"))
@@ -105,6 +104,7 @@ weather_data <- weather_data |>
 glimpse(weather_data)
 ```
 
+#### Explore weather data
 
 ```{r}
 weather_data |> 
@@ -149,6 +149,8 @@ pothole_df |>
   geom_point()
 ```
 
+#### Compare weather data and pothole reports
+
 ```{r}
 pothole_df |> 
   as_tibble() |> 
@@ -170,7 +172,6 @@ pothole_df |>
   geom_smooth() +
   facet_wrap(vars(name), scales = "free")
 ```
-
 
 ```{r}
 pothole_df |> 
@@ -216,10 +217,21 @@ pothole_df |>
   facet_wrap(vars(name), scales = "free")
 ```
 
+### Cross-validate models
 
 ```{r}
-#384.208 sec elapsed
+#cv
+pothole_cv <- stretch_tsibble(pothole_df, .step = 12, .init = 24)
+
+pothole_cv |> 
+  count(.id)
+```
+
+```{r}
+#180.976 sec elapsed 
 tic()
+progressr::with_progress(
+
   model_df_exo <- pothole_cv |> 
     model(ets = ETS(log(report_count + 1)),
           ts_lm = TSLM(log(report_count + 1) ~ trend() + season()),
@@ -233,6 +245,82 @@ tic()
           arima_exo_lag2 = ARIMA(log(report_count + 1) ~ temp_avg_lag2 + min_avg_lag2 + max_avg_lag2 + prcp_sum_lag2),
           arima_exo_lag3 = ARIMA(log(report_count + 1) ~ temp_avg_lag3 + min_avg_lag3 + max_avg_lag3 + prcp_sum_lag3)
           )
+)
 toc()
 ```
 
+```{r}
+horizon_data <- new_data(pothole_cv, 12) |> 
+  left_join(pothole_df)
+
+horizon_data
+```
+
+```{r}
+pothole_fc_exo <- model_df_exo |> 
+  forecast(horizon_data)
+```
+
+```{r}
+tic()
+fc_exo_acc <- pothole_fc_exo |> 
+  accuracy(pothole_df, measures = list(point_accuracy_measures, distribution_accuracy_measures, skill_crps = skill_score(CRPS))) |> 
+  select(.model, .type, MAPE, RMSSE, skill_crps) |> 
+  arrange(desc(skill_crps))
+toc()
+```
+
+#### Compare accuracy
+
+```{r}
+fc_exo_acc |> 
+  ggplot(aes(RMSSE, skill_crps, label = .model)) +
+  geom_label() +
+  scale_x_reverse()
+```
+
+```{r}
+fc_exo_acc |> 
+  filter(!.model %in% c("ets", "arima")) |> 
+  ggplot(aes(RMSSE, skill_crps, label = .model)) +
+  geom_label() +
+  scale_x_reverse()
+```
+
+```{r}
+pothole_fc_exo |> 
+  filter(.id == max(.id)) |> 
+  left_join(fc_exo_acc) |> 
+  mutate(.model = fct_reorder(.model, skill_crps, .desc = TRUE)) |> 
+  autoplot(pothole_cv) +
+  facet_wrap(vars(.model), ncol = 1)
+```
+
+### Forecast
+
+```{r}
+#find the monthly average for all the weather data
+new_weather_data <- pothole_df |> 
+  mutate(month = month(created_yearmonth, label = TRUE)) |> 
+  as_tibble() |> 
+  select(month, min_avg:prcp_sum_lag3) |> 
+  group_by(month) |> 
+  summarize(across(where(is.numeric), mean)) |> 
+  ungroup()
+
+final_exo_model <- pothole_df |> 
+  model(arima_exo_lag3 = ARIMA(log(report_count + 1) ~ temp_avg_lag3 + min_avg_lag3 + max_avg_lag3 + prcp_sum_lag3),
+        lm_seasonal = TSLM(log(report_count + 1) ~ trend() + season()))
+
+horizon_data_final <- new_data(pothole_df, 12) |> 
+  mutate(month = month(created_yearmonth, label = TRUE)) |> 
+  left_join(new_weather_data)
+
+final_exo_model |> 
+  forecast(horizon_data_final) |> 
+  autoplot(pothole_df |> 
+             filter(year(created_yearmonth) >= 2022)) +
+  facet_wrap(vars(.model), ncol = 1)
+```
+
+### Scenario forecasting
