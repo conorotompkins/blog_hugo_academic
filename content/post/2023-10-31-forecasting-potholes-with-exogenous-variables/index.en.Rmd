@@ -217,7 +217,7 @@ pothole_cv |>
 #180.976 sec elapsed 
 tic()
 progressr::with_progress(
-
+  
   model_df_exo <- pothole_cv |> 
     model(ets = ETS(log(report_count + 1)),
           ts_lm = TSLM(log(report_count + 1) ~ trend() + season()),
@@ -230,7 +230,7 @@ progressr::with_progress(
           arima_exo_lag1 = ARIMA(log(report_count + 1) ~ temp_avg_lag1 + min_avg_lag1 + max_avg_lag1 + prcp_sum_lag1),
           arima_exo_lag2 = ARIMA(log(report_count + 1) ~ temp_avg_lag2 + min_avg_lag2 + max_avg_lag2 + prcp_sum_lag2),
           arima_exo_lag3 = ARIMA(log(report_count + 1) ~ temp_avg_lag3 + min_avg_lag3 + max_avg_lag3 + prcp_sum_lag3)
-          )
+    )
 )
 toc()
 ```
@@ -285,58 +285,95 @@ pothole_fc_exo |>
          color = "none")
 ```
 
-### Forecast
-
-```{r}
-#find the monthly average for all the weather data
-new_df <- new_data(pothole_df, 12) |> 
-  mutate(request_type = "Potholes")
-
-new_weather_data <- pothole_df |> 
-  mutate(month = month(created_yearmonth, label = TRUE)) |> 
-  as_tibble() |> 
-  select(month, min_avg:prcp_sum_lag3) |> 
-  select(-contains("lag")) |> 
-  group_by(month) |> 
-  summarize(across(where(is.numeric), mean)) |> 
-  ungroup()
-
-new_df <- new_df |> 
-  mutate(month = month(created_yearmonth, label = TRUE)) |> 
-  left_join(new_weather_data)
-
-horizon_data_final <- bind_rows(pothole_df, new_df) |> 
-  mutate(across(c(min_avg, temp_avg, max_avg, temp_diff, prcp_sum), ~lag(.x, 1), .names = "{.col}_lag1")) |> 
-  mutate(across(c(min_avg, temp_avg, max_avg, temp_diff, prcp_sum), ~lag(.x, 2), .names = "{.col}_lag2")) |> 
-  mutate(across(c(min_avg, temp_avg, max_avg, temp_diff, prcp_sum), ~lag(.x, 3), .names = "{.col}_lag3")) |> 
-  semi_join(new_df)
-
-final_exo_model <- pothole_df |> 
-  model(arima_exo_lag3 = ARIMA(log(report_count + 1) ~ temp_avg_lag3 + min_avg_lag3 + max_avg_lag3 + prcp_sum_lag3),
-        lm_seasonal = TSLM(log(report_count + 1) ~ trend() + season()))
-
-final_exo_model |> 
-  forecast(horizon_data_final) |> 
-  autoplot(pothole_df |> 
-             filter(year(created_yearmonth) >= 2022)) +
-  facet_wrap(vars(.model), ncol = 1)
-```
-
 ### Scenario forecasting
 
+This code simulates the forecast for various scenarious of precipitation. It extracts the 10%, 50%, and 90% percentiles of precipitation by month. Then it recalculates the lagged weather data with each of those percentiles. Then it forecasts each scenario with the `arima_exo_lag3` model.
 ```{r}
-prcp_scenarios <- pothole_df |> 
+prcp_percentiles <- pothole_df |> 
   mutate(month = month(created_yearmonth, label = TRUE)) |> 
   as_tibble() |> 
   select(month, prcp_sum) |> 
   group_by(month) |> 
-  reframe(pctiles = c("25%", "50%", "70%"),
-          prcp_sum = quantile(prcp_sum, probs = c(.25, .5, .75))) |> 
+  reframe(pctiles = c("10", "50", "90"),
+          prcp_sum = quantile(prcp_sum, probs = c(.1, .5, .9))) |> 
   ungroup() |> 
-  pivot_wider(names_from = pctiles, values_from = prcp_sum)
+  pivot_wider(names_from = pctiles, values_from = prcp_sum, names_prefix = "prcp_sum_")
 
-glimpse(prcp_scenarios)
-
-glimpse(new_weather_data)
+prcp_percentiles
 ```
 
+```{r}
+create_horizon_data <- function(x, prcp_scenario, prcp_col){
+  
+  x <- x |> 
+    select(-contains("lag"))
+  
+  print(x)
+  
+  #find the monthly average for all the weather data
+  new_df <- new_data(x, 12) |> 
+    mutate(request_type = "Potholes")
+  
+  print(new_df)
+  
+  new_temp_data <- x |> 
+    mutate(month = month(created_yearmonth, label = TRUE)) |> 
+    as_tibble() |> 
+    #select(month, min_avg:prcp_sum_lag3) |> 
+    select(-contains(c("lag", "prcp"))) |> 
+    group_by(month) |> 
+    summarize(across(where(is.numeric), mean)) |> 
+    ungroup() |> 
+    left_join(prcp_scenario |> 
+                select(month, {{ prcp_col }})) |> 
+    
+    rename(prcp_sum = {{ prcp_col }})
+  
+  new_df <- new_df |> 
+    mutate(month = month(created_yearmonth, label = TRUE)) |> 
+    left_join(new_temp_data)
+  
+  print("new_df")
+  print(new_df)
+  
+  x <- x |> 
+    bind_rows(new_df)
+
+  x |>
+    mutate(across(c(min_avg, temp_avg, max_avg, temp_diff, prcp_sum), ~lag(.x, 1), .names = "{.col}_lag1")) |>
+    mutate(across(c(min_avg, temp_avg, max_avg, temp_diff, prcp_sum), ~lag(.x, 2), .names = "{.col}_lag2")) |>
+    mutate(across(c(min_avg, temp_avg, max_avg, temp_diff, prcp_sum), ~lag(.x, 3), .names = "{.col}_lag3")) |>
+    semi_join(new_df, by = c("created_yearmonth"))
+  
+}
+
+create_horizon_data(pothole_df, prcp_percentiles, prcp_sum_10) |> 
+  view()
+
+fc_scenarios <- scenarios(
+  
+  scenario_low = create_horizon_data(pothole_df, prcp_percentiles, prcp_sum_10),
+  
+  scenario_median = create_horizon_data(pothole_df, prcp_percentiles, prcp_sum_50),
+  
+  scenario_high = create_horizon_data(pothole_df, prcp_percentiles, prcp_sum_90)
+  
+)
+
+glimpse(fc_scenarios$scenario_low)
+
+final_exo_model <- pothole_df |> 
+  model(arima_exo_lag3 = ARIMA(log(report_count + 1) ~ temp_avg_lag3 + min_avg_lag3 + max_avg_lag3 + prcp_sum_lag3))
+
+scenerio_fc <- final_exo_model |> 
+  forecast(fc_scenarios) |> 
+  mutate(.scenario = fct_relevel(.scenario, c("scenario_low", "scenario_median", "scenario_high")))
+
+scenerio_fc |> 
+  autoplot()
+
+scenerio_fc |> 
+  as_tibble() |> 
+  group_by(.scenario) |> 
+  summarize(total_pothole_fc = sum(.mean))
+```
