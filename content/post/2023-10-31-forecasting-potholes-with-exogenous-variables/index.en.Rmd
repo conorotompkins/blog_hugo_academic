@@ -49,12 +49,11 @@ options(scipen = 999, digits = 4)
 
 ```{r}
 #read in pothole data
-pothole_data <- read_csv("data/wprdc_311.csv") |> 
+pothole_data <- read_csv("content/post/2023-10-31-forecasting-potholes-with-exogenous-variables/data/wprdc_311.csv") |> 
   clean_names() |> 
   filter(request_type == "Potholes") |> 
   mutate(created_yearmonth = yearmonth(created_on))
 ```
-
 
 ```{r}
 pothole_df <- pothole_data |> 
@@ -136,19 +135,6 @@ pothole_df <- pothole_df |>
   left_join(weather_data, by = c("created_yearmonth" = "date_ym"))
 ```
 
-
-```{r}
-pothole_df |> 
-  ggplot(aes(temp_avg, report_count)) +
-  geom_point()
-```
-
-```{r}
-pothole_df |> 
-  ggplot(aes(prcp_sum, report_count)) +
-  geom_point()
-```
-
 #### Compare weather data and pothole reports
 
 ```{r}
@@ -221,7 +207,7 @@ pothole_df |>
 
 ```{r}
 #cv
-pothole_cv <- stretch_tsibble(pothole_df, .step = 12, .init = 24)
+pothole_cv <- stretch_tsibble(pothole_df, .step = 12, .init = 36)
 
 pothole_cv |> 
   count(.id)
@@ -275,7 +261,7 @@ toc()
 ```{r}
 fc_exo_acc |> 
   ggplot(aes(RMSSE, skill_crps, label = .model)) +
-  geom_label() +
+  geom_point() +
   scale_x_reverse()
 ```
 
@@ -283,38 +269,51 @@ fc_exo_acc |>
 fc_exo_acc |> 
   filter(!.model %in% c("ets", "arima")) |> 
   ggplot(aes(RMSSE, skill_crps, label = .model)) +
-  geom_label() +
+  geom_point() +
+  ggrepel::geom_label_repel(max.overlaps = 100) +
   scale_x_reverse()
 ```
 
-```{r}
+```{r, fig.height=12}
 pothole_fc_exo |> 
   filter(.id == max(.id)) |> 
   left_join(fc_exo_acc) |> 
   mutate(.model = fct_reorder(.model, skill_crps, .desc = TRUE)) |> 
   autoplot(pothole_cv) +
-  facet_wrap(vars(.model), ncol = 1)
+  facet_wrap(vars(.model), ncol = 2, scales = "free_y") +
+  guides(fill = "none",
+         color = "none")
 ```
 
 ### Forecast
 
 ```{r}
 #find the monthly average for all the weather data
+new_df <- new_data(pothole_df, 12) |> 
+  mutate(request_type = "Potholes")
+
 new_weather_data <- pothole_df |> 
   mutate(month = month(created_yearmonth, label = TRUE)) |> 
   as_tibble() |> 
   select(month, min_avg:prcp_sum_lag3) |> 
+  select(-contains("lag")) |> 
   group_by(month) |> 
   summarize(across(where(is.numeric), mean)) |> 
   ungroup()
 
+new_df <- new_df |> 
+  mutate(month = month(created_yearmonth, label = TRUE)) |> 
+  left_join(new_weather_data)
+
+horizon_data_final <- bind_rows(pothole_df, new_df) |> 
+  mutate(across(c(min_avg, temp_avg, max_avg, temp_diff, prcp_sum), ~lag(.x, 1), .names = "{.col}_lag1")) |> 
+  mutate(across(c(min_avg, temp_avg, max_avg, temp_diff, prcp_sum), ~lag(.x, 2), .names = "{.col}_lag2")) |> 
+  mutate(across(c(min_avg, temp_avg, max_avg, temp_diff, prcp_sum), ~lag(.x, 3), .names = "{.col}_lag3")) |> 
+  semi_join(new_df)
+
 final_exo_model <- pothole_df |> 
   model(arima_exo_lag3 = ARIMA(log(report_count + 1) ~ temp_avg_lag3 + min_avg_lag3 + max_avg_lag3 + prcp_sum_lag3),
         lm_seasonal = TSLM(log(report_count + 1) ~ trend() + season()))
-
-horizon_data_final <- new_data(pothole_df, 12) |> 
-  mutate(month = month(created_yearmonth, label = TRUE)) |> 
-  left_join(new_weather_data)
 
 final_exo_model |> 
   forecast(horizon_data_final) |> 
@@ -324,3 +323,20 @@ final_exo_model |>
 ```
 
 ### Scenario forecasting
+
+```{r}
+prcp_scenarios <- pothole_df |> 
+  mutate(month = month(created_yearmonth, label = TRUE)) |> 
+  as_tibble() |> 
+  select(month, prcp_sum) |> 
+  group_by(month) |> 
+  reframe(pctiles = c("25%", "50%", "70%"),
+          prcp_sum = quantile(prcp_sum, probs = c(.25, .5, .75))) |> 
+  ungroup() |> 
+  pivot_wider(names_from = pctiles, values_from = prcp_sum)
+
+glimpse(prcp_scenarios)
+
+glimpse(new_weather_data)
+```
+
