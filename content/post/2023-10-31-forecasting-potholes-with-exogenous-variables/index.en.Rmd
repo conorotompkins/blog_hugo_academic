@@ -28,7 +28,7 @@ knitr::opts_chunk$set(echo = TRUE,
 ### Intro
 
 
-### Set up data
+### Set up packages and environment
 
 ```{r}
 library(fpp3)
@@ -46,21 +46,21 @@ plan(multisession)
 options(scipen = 999, digits = 4)
 ```
 
-
+This code reads in the pothole data used in the [previous post](), aggregates it by year + month, and turns it into a `tsibble`.
 ```{r}
 #read in pothole data
 pothole_data <- read_csv("content/post/2023-10-31-forecasting-potholes-with-exogenous-variables/data/wprdc_311.csv") |> 
   clean_names() |> 
   filter(request_type == "Potholes") |> 
   mutate(created_yearmonth = yearmonth(created_on))
-```
 
-```{r}
 pothole_df <- pothole_data |> 
   group_by(created_yearmonth, request_type) |> 
   summarize(report_count = n()) |> 
   ungroup() |> 
   as_tsibble()
+
+pothole_df
 ```
 
 ```{r, echo=FALSE}
@@ -70,73 +70,79 @@ pothole_df <- pothole_data |>
 
 ### Weather data
 
+This uses the [{GSODR}](https://cran.r-project.org/web/packages/GSODR/index.html) package to get daily weather data from the USA National Centers for Environmental Information ('NCEI'). temperature is in Celsius and precipitation is in millimeters.
 ```{r}
 load(system.file("extdata", "isd_history.rda", package = "GSODR"))
 
 weather_raw <- get_GSOD(years = c(2014:2023), station = "725205-14762") |> 
   as_tibble() |> 
   clean_names()
-```
 
-```{r}
 weather_data <- weather_raw |> 
-  select(stnid, name, date = yearmoda, min, temp, max, prcp, sndp) |> 
+  select(stnid, name, date = yearmoda, min, temp, max, prcp) |> 
   mutate(max_min_diff = max - min)
 
 glimpse(weather_data)
 ```
 
+Next I summarize the data by year + month and calculate various lags for each variable.
 ```{r}
 weather_data <- weather_data |> 
   mutate(date_ym = yearmonth(date)) |> 
   group_by(date_ym) |> 
-  summarize(min_avg = mean(min),
+  summarize(temp_min_avg = mean(min),
             temp_avg = mean(temp),
-            max_avg = mean(max),
+            temp_max_avg = mean(max),
             prcp_sum = sum(prcp)) |> 
   ungroup() |> 
-  mutate(temp_diff = max_avg - min_avg) |> 
-  mutate(across(c(min_avg, temp_avg, max_avg, temp_diff, prcp_sum), ~lag(.x, 1), .names = "{.col}_lag1")) |> 
-  mutate(across(c(min_avg, temp_avg, max_avg, temp_diff, prcp_sum), ~lag(.x, 2), .names = "{.col}_lag2")) |> 
-  mutate(across(c(min_avg, temp_avg, max_avg, temp_diff, prcp_sum), ~lag(.x, 3), .names = "{.col}_lag3"))
+  mutate(temp_diff = temp_max_avg - temp_min_avg) |> 
+  mutate(across(c(temp_min_avg, temp_avg, temp_max_avg, temp_diff, prcp_sum), ~lag(.x, 1), .names = "{.col}_lag1")) |> 
+  mutate(across(c(temp_min_avg, temp_avg, temp_max_avg, temp_diff, prcp_sum), ~lag(.x, 2), .names = "{.col}_lag2")) |> 
+  mutate(across(c(temp_min_avg, temp_avg, temp_max_avg, temp_diff, prcp_sum), ~lag(.x, 3), .names = "{.col}_lag3")) |> 
+  select(date_ym, contains("temp_avg"), contains("min"), contains("max"), contains("diff"), contains("prcp"))
 
 glimpse(weather_data)
 ```
 
 #### Explore weather data
 
+This shows average temperature, average minimum temperature, and average maximum temperature in Pittsburgh by year + month.
 ```{r}
 weather_data |> 
   ggplot(aes(date_ym, temp_avg)) +
-  geom_ribbon(aes(ymin = min_avg, ymax = max_avg), alpha = .3) +
+  geom_ribbon(aes(ymin = temp_min_avg, ymax = temp_max_avg), alpha = .3) +
   geom_line()
 ```
 
-
+This shows the sum of precipitation by year + month over time.
 ```{r}
 weather_data |> 
   ggplot(aes(date_ym, prcp_sum)) +
-  geom_col()
+  geom_line()
 ```
 
-
+This compares precipitation vs the minimum temperatur (below freezing highlighted).
 ```{r}
 weather_data |> 
   mutate(year = as.factor(year(date_ym))) |> 
-  ggplot(aes(min_avg, prcp_sum, color = year)) +
-  geom_point() +
+  ggplot(aes(temp_min_avg, prcp_sum)) +
+  geom_rect(aes(xmin = -Inf, xmax = 0, ymin = -Inf, ymax = Inf), color = "grey", alpha = .1) +
+  geom_point(aes(color = year)) +
   geom_vline(xintercept = 0) +
   facet_wrap(vars(year))
 ```
 
+2017 and 2018 appear to have slightly more precipitation in below freezing temperatures, but not significantly.
 
+#### Compare weather data and pothole reports
+
+Next I do some EDA to visualize any connection between reports of potholes and weather.
 ```{r}
 pothole_df <- pothole_df |> 
   left_join(weather_data, by = c("created_yearmonth" = "date_ym"))
 ```
 
-#### Compare weather data and pothole reports
-
+There is some relationship between lower average temperatures in the previous month(s) and pothole reports.
 ```{r}
 pothole_df |> 
   as_tibble() |> 
@@ -145,9 +151,11 @@ pothole_df |>
   ggplot(aes(value, report_count)) +
   geom_point() +
   geom_smooth() +
-  facet_wrap(vars(name), scales = "free")
+  facet_wrap(vars(name), scales = "free") +
+  labs(title = "Pothole reports vs. the average temperature")
 ```
 
+The difference between the minimum and maximum temperatures also appears to be related to pothole reports.
 ```{r}
 pothole_df |> 
   as_tibble() |> 
@@ -156,9 +164,11 @@ pothole_df |>
   ggplot(aes(value, report_count)) +
   geom_point() +
   geom_smooth() +
-  facet_wrap(vars(name), scales = "free")
+  facet_wrap(vars(name), scales = "free") +
+  labs(title = "Pothole reports vs. the temperature difference")
 ```
 
+There appears to be a positive relationship between the previous month(s) minimum temperaturea and pothole reports.
 ```{r}
 pothole_df |> 
   as_tibble() |> 
@@ -167,9 +177,11 @@ pothole_df |>
   ggplot(aes(value, report_count)) +
   geom_point() +
   geom_smooth() +
-  facet_wrap(vars(name), scales = "free")
+  facet_wrap(vars(name), scales = "free") +
+  labs(title = "Pothole reports vs. the minimum temperature")
 ```
 
+There is some relationship between lower maximum temperatures in the previous month(s) and pothole reports.
 ```{r}
 pothole_df |> 
   as_tibble() |> 
@@ -178,9 +190,11 @@ pothole_df |>
   ggplot(aes(value, report_count)) +
   geom_point() +
   geom_smooth() +
-  facet_wrap(vars(name), scales = "free")
+  facet_wrap(vars(name), scales = "free") +
+  labs(title = "Pothole reports vs. the maximum temperature")
 ```
 
+There is a positive relationship between the total precipitation in the previous month(s) and pothole reports.
 ```{r}
 pothole_df |> 
   as_tibble() |> 
@@ -189,30 +203,22 @@ pothole_df |>
   ggplot(aes(value, report_count)) +
   geom_point() +
   geom_smooth() +
-  facet_wrap(vars(name), scales = "free")
-```
-
-```{r}
-pothole_df |> 
-  as_tibble() |> 
-  select(report_count, contains("diff")) |> 
-  pivot_longer(contains("diff")) |> 
-  ggplot(aes(value, report_count)) +
-  geom_point() +
-  geom_smooth() +
-  facet_wrap(vars(name), scales = "free")
+  facet_wrap(vars(name), scales = "free") +
+  labs(title = "Pothole reports vs. precipitation")
 ```
 
 ### Cross-validate models
 
+Next I cross-validate models using various combinations of the weather data as exogenous variables. I also make benchmark models for comparison.
 ```{r}
 #cv
-pothole_cv <- stretch_tsibble(pothole_df, .step = 12, .init = 36)
+pothole_cv <- stretch_tsibble(pothole_df, .step = 12, .init = 24)
 
 pothole_cv |> 
   count(.id)
 ```
 
+As in the previous post, `report_count` is transformed with `log(x + 1)` to force the predictions to be positive.
 ```{r}
 #180.976 sec elapsed 
 tic()
@@ -221,15 +227,15 @@ progressr::with_progress(
   model_df_exo <- pothole_cv |> 
     model(ets = ETS(log(report_count + 1)),
           ts_lm = TSLM(log(report_count + 1) ~ trend() + season()),
-          ts_lm_exo = TSLM(log(report_count + 1) ~ trend() + season() + temp_avg + min_avg + max_avg + prcp_sum),
-          ts_lm_exo_lag1 = TSLM(log(report_count + 1) ~ trend() + season() + temp_avg_lag1 + min_avg_lag1 + max_avg_lag1 + prcp_sum_lag1),
-          ts_lm_exo_lag2 = TSLM(log(report_count + 1) ~ trend() + season() + temp_avg_lag2 + min_avg_lag2 + max_avg_lag2 + prcp_sum_lag2),
-          ts_lm_exo_lag3 = TSLM(log(report_count + 1) ~ trend() + season() + temp_avg_lag3 + min_avg_lag3 + max_avg_lag3 + prcp_sum_lag3),
+          ts_lm_exo = TSLM(log(report_count + 1) ~ trend() + season() + temp_avg + temp_min_avg + temp_max_avg + prcp_sum),
+          ts_lm_exo_lag1 = TSLM(log(report_count + 1) ~ trend() + season() + temp_avg_lag1 + temp_min_avg_lag1 + temp_max_avg_lag1 + prcp_sum_lag1),
+          ts_lm_exo_lag2 = TSLM(log(report_count + 1) ~ trend() + season() + temp_avg_lag2 + temp_min_avg_lag2 + temp_max_avg_lag2 + prcp_sum_lag2),
+          ts_lm_exo_lag3 = TSLM(log(report_count + 1) ~ trend() + season() + temp_avg_lag3 + temp_min_avg_lag3 + temp_max_avg_lag3 + prcp_sum_lag3),
           arima = ARIMA(log(report_count + 1)),
-          arima_exo = ARIMA(log(report_count + 1) ~ temp_avg + min_avg + max_avg + prcp_sum),
-          arima_exo_lag1 = ARIMA(log(report_count + 1) ~ temp_avg_lag1 + min_avg_lag1 + max_avg_lag1 + prcp_sum_lag1),
-          arima_exo_lag2 = ARIMA(log(report_count + 1) ~ temp_avg_lag2 + min_avg_lag2 + max_avg_lag2 + prcp_sum_lag2),
-          arima_exo_lag3 = ARIMA(log(report_count + 1) ~ temp_avg_lag3 + min_avg_lag3 + max_avg_lag3 + prcp_sum_lag3)
+          arima_exo = ARIMA(log(report_count + 1) ~ temp_avg + temp_min_avg + temp_max_avg + prcp_sum),
+          arima_exo_lag1 = ARIMA(log(report_count + 1) ~ temp_avg_lag1 + temp_min_avg_lag1 + temp_max_avg_lag1 + prcp_sum_lag1),
+          arima_exo_lag2 = ARIMA(log(report_count + 1) ~ temp_avg_lag2 + temp_min_avg_lag2 + temp_max_avg_lag2 + prcp_sum_lag2),
+          arima_exo_lag3 = ARIMA(log(report_count + 1) ~ temp_avg_lag3 + temp_min_avg_lag3 + temp_max_avg_lag3 + prcp_sum_lag3)
     )
 )
 toc()
@@ -251,24 +257,22 @@ pothole_fc_exo <- model_df_exo |>
 tic()
 fc_exo_acc <- pothole_fc_exo |> 
   accuracy(pothole_df, measures = list(point_accuracy_measures, distribution_accuracy_measures, skill_crps = skill_score(CRPS))) |> 
-  select(.model, .type, MAPE, RMSSE, skill_crps) |> 
+  select(.model, .type, RMSE, skill_crps) |> 
   arrange(desc(skill_crps))
 toc()
+
+fc_exo_acc
 ```
+
+The `arima_exo_lag3` model provides significantly more accuracy than the other models. 
 
 #### Compare accuracy
 
-```{r}
-fc_exo_acc |> 
-  ggplot(aes(RMSSE, skill_crps, label = .model)) +
-  geom_point() +
-  scale_x_reverse()
-```
-
+Excluding the worst two models:
 ```{r}
 fc_exo_acc |> 
   filter(!.model %in% c("ets", "arima")) |> 
-  ggplot(aes(RMSSE, skill_crps, label = .model)) +
+  ggplot(aes(RMSE, skill_crps, label = .model)) +
   geom_point() +
   ggrepel::geom_label_repel(max.overlaps = 100) +
   scale_x_reverse()
@@ -276,10 +280,12 @@ fc_exo_acc |>
 
 ```{r, fig.height=12}
 pothole_fc_exo |> 
-  filter(.id == max(.id)) |> 
+  filter(.id == max(.id),
+         str_detect(.model, "exo")) |> 
   left_join(fc_exo_acc) |> 
   mutate(.model = fct_reorder(.model, skill_crps, .desc = TRUE)) |> 
-  autoplot(pothole_cv) +
+  autoplot(pothole_cv |> 
+             slice_tail(n = 24)) +
   facet_wrap(vars(.model), ncol = 2, scales = "free_y") +
   guides(fill = "none",
          color = "none")
@@ -287,8 +293,9 @@ pothole_fc_exo |>
 
 ### Scenario forecasting
 
-This code simulates the forecast for various scenarious of precipitation. It extracts the 10%, 50%, and 90% percentiles of precipitation by month. Then it recalculates the lagged weather data with each of those percentiles. Then it forecasts each scenario with the `arima_exo_lag3` model.
+This code simulates various scenarios of precipitation. These scenarios are used to create scenario forecasts based on the varied exogenous variables. Then it . Then it forecasts each scenario with the `arima_exo_lag3` model.
 ```{r}
+#extracts the 10%, 50%, and 90% percentiles of precipitation by month
 prcp_percentiles <- pothole_df |> 
   mutate(month = month(created_yearmonth, label = TRUE)) |> 
   as_tibble() |> 
@@ -305,51 +312,51 @@ prcp_percentiles
 ```{r}
 create_horizon_data <- function(x, prcp_scenario, prcp_col){
   
+  #drop the lagged weather variables from the input df containing weather data
   x <- x |> 
     select(-contains("lag"))
   
-  print(x)
-  
-  #find the monthly average for all the weather data
+  #create a new dataframe with the next 12 months
   new_df <- new_data(x, 12) |> 
     mutate(request_type = "Potholes")
   
-  print(new_df)
-  
+  #find the monthly average for all the temperature variables
   new_temp_data <- x |> 
     mutate(month = month(created_yearmonth, label = TRUE)) |> 
     as_tibble() |> 
-    #select(month, min_avg:prcp_sum_lag3) |> 
     select(-contains(c("lag", "prcp"))) |> 
     group_by(month) |> 
     summarize(across(where(is.numeric), mean)) |> 
     ungroup() |> 
+    #add in percentile precipitation column
     left_join(prcp_scenario |> 
                 select(month, {{ prcp_col }})) |> 
-    
     rename(prcp_sum = {{ prcp_col }})
   
+  #join new temperature data
   new_df <- new_df |> 
     mutate(month = month(created_yearmonth, label = TRUE)) |> 
     left_join(new_temp_data)
-  
-  print("new_df")
-  print(new_df)
-  
+
+  #append new temperature data to historical data
   x <- x |> 
     bind_rows(new_df)
 
+  #recalculate the lagged weather data based on the given percentile of precipitation
   x |>
-    mutate(across(c(min_avg, temp_avg, max_avg, temp_diff, prcp_sum), ~lag(.x, 1), .names = "{.col}_lag1")) |>
-    mutate(across(c(min_avg, temp_avg, max_avg, temp_diff, prcp_sum), ~lag(.x, 2), .names = "{.col}_lag2")) |>
-    mutate(across(c(min_avg, temp_avg, max_avg, temp_diff, prcp_sum), ~lag(.x, 3), .names = "{.col}_lag3")) |>
+    mutate(across(c(temp_min_avg, temp_avg, temp_max_avg, temp_diff, prcp_sum), ~lag(.x, 1), .names = "{.col}_lag1")) |>
+    mutate(across(c(temp_min_avg, temp_avg, temp_max_avg, temp_diff, prcp_sum), ~lag(.x, 2), .names = "{.col}_lag2")) |>
+    mutate(across(c(temp_min_avg, temp_avg, temp_max_avg, temp_diff, prcp_sum), ~lag(.x, 3), .names = "{.col}_lag3")) |>
     semi_join(new_df, by = c("created_yearmonth"))
   
 }
 
 create_horizon_data(pothole_df, prcp_percentiles, prcp_sum_10) |> 
-  view()
+  glimpse()
+```
 
+```{r}
+#create scenarios
 fc_scenarios <- scenarios(
   
   scenario_low = create_horizon_data(pothole_df, prcp_percentiles, prcp_sum_10),
@@ -360,20 +367,30 @@ fc_scenarios <- scenarios(
   
 )
 
-glimpse(fc_scenarios$scenario_low)
+str(fc_scenarios, max.level = 1)
+```
 
+```{r}
+#refit best model on total history
 final_exo_model <- pothole_df |> 
-  model(arima_exo_lag3 = ARIMA(log(report_count + 1) ~ temp_avg_lag3 + min_avg_lag3 + max_avg_lag3 + prcp_sum_lag3))
+  model(arima_exo_lag3 = ARIMA(log(report_count + 1) ~ temp_avg_lag3 + temp_min_avg_lag3 + temp_max_avg_lag3 + prcp_sum_lag3))
 
+#forecast scenarios
 scenerio_fc <- final_exo_model |> 
   forecast(fc_scenarios) |> 
   mutate(.scenario = fct_relevel(.scenario, c("scenario_low", "scenario_median", "scenario_high")))
 
 scenerio_fc |> 
-  autoplot()
+  autoplot() +
+  facet_wrap(vars(.scenario), scales = "fixed", ncol = 1)
+```
 
+```{r}
 scenerio_fc |> 
   as_tibble() |> 
   group_by(.scenario) |> 
-  summarize(total_pothole_fc = sum(.mean))
+  summarize(total_pothole_fc = sum(.mean)) |> 
+  ggplot(aes(total_pothole_fc, .scenario)) +
+  geom_col() +
+  scale_x_comma()
 ```
