@@ -64,15 +64,10 @@ pothole_df <- pothole_data |>
 pothole_df
 ```
 
-```{r, echo=FALSE}
-#read in weather data
-#weather_data <- read_csv("inputs/allegheny_county_weather_data.csv")
-```
-
 ### Weather data
 
 This uses the [{GSODR}](https://cran.r-project.org/web/packages/GSODR/index.html) package to get daily weather data from the USA National Centers for Environmental Information ('NCEI'). Temperature is in Celsius and precipitation is in millimeters.
-```{r}
+```{r, eval = FALSE}
 load(system.file("extdata", "isd_history.rda", package = "GSODR"))
 
 weather_raw <- get_GSOD(years = c(2014:2023), station = "725205-14762") |> 
@@ -81,7 +76,14 @@ weather_raw <- get_GSOD(years = c(2014:2023), station = "725205-14762") |>
 
 weather_data <- weather_raw |> 
   select(stnid, name, date = yearmoda, min, temp, max, prcp)
+```
 
+```{r, echo=FALSE}
+#read in weather data
+weather_data <- read_csv("data/allegheny_county_weather_data.csv")
+```
+
+```{r}
 glimpse(weather_data)
 ```
 
