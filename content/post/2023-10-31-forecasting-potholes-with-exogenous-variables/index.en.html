@@ -79,9 +79,8 @@ weather_raw &lt;- get_GSOD(years = c(2014:2023), station = &quot;725205-14762&qu
   clean_names()
 
 weather_data &lt;- weather_raw |&gt; 
-  select(stnid, name, date = yearmoda, min, temp, max, prcp)
-
-glimpse(weather_data)</code></pre>
+  select(stnid, name, date = yearmoda, min, temp, max, prcp)</code></pre>
+<pre class="r"><code>glimpse(weather_data)</code></pre>
 <pre><code>## Rows: 3,601
 ## Columns: 7
 ## $ stnid &lt;chr&gt; &quot;725205-14762&quot;, &quot;725205-14762&quot;, &quot;725205-14762&quot;, &quot;725205-14762&quot;, …
@@ -137,12 +136,12 @@ glimpse(weather_data)</code></pre>
   ggplot(aes(date_ym, temp_avg)) +
   geom_ribbon(aes(ymin = temp_min_avg, ymax = temp_max_avg), alpha = .3) +
   geom_line()</code></pre>
-<p><img src="{{< blogdown/postref >}}index.en_files/figure-html/unnamed-chunk-6-1.png" width="672" /></p>
+<p><img src="{{< blogdown/postref >}}index.en_files/figure-html/unnamed-chunk-7-1.png" width="672" /></p>
 <p>This shows the sum of precipitation by year + month over time.</p>
 <pre class="r"><code>weather_data |&gt; 
   ggplot(aes(date_ym, prcp_sum)) +
   geom_line()</code></pre>
-<p><img src="{{< blogdown/postref >}}index.en_files/figure-html/unnamed-chunk-7-1.png" width="672" /></p>
+<p><img src="{{< blogdown/postref >}}index.en_files/figure-html/unnamed-chunk-8-1.png" width="672" /></p>
 <p>This compares precipitation vs the minimum temperature (below freezing highlighted).</p>
 <pre class="r"><code>weather_data |&gt; 
   mutate(year = as.factor(year(date_ym))) |&gt; 
@@ -152,7 +151,7 @@ glimpse(weather_data)</code></pre>
   geom_vline(xintercept = 0) +
   facet_wrap(vars(year)) +
   guides(color = &quot;none&quot;)</code></pre>
-<p><img src="{{< blogdown/postref >}}index.en_files/figure-html/unnamed-chunk-8-1.png" width="672" /></p>
+<p><img src="{{< blogdown/postref >}}index.en_files/figure-html/unnamed-chunk-9-1.png" width="672" /></p>
 <p>2017 and 2018 appear to have slightly more precipitation in below freezing temperatures, but not significantly.</p>
 </div>
 <div id="compare-weather-data-and-pothole-reports" class="section level5">
@@ -169,7 +168,7 @@ glimpse(weather_data)</code></pre>
   geom_smooth(method = &quot;lm&quot;) +
   facet_wrap(vars(name), scales = &quot;free&quot;) +
   labs(title = &quot;Pothole reports vs. the average temperature&quot;)</code></pre>
-<p><img src="{{< blogdown/postref >}}index.en_files/figure-html/unnamed-chunk-10-1.png" width="672" />
+<p><img src="{{< blogdown/postref >}}index.en_files/figure-html/unnamed-chunk-11-1.png" width="672" />
 There is some positive relationship between lower average temperatures in previous months and pothole reports. The “current” average temperature does not appear to be related.</p>
 <pre class="r"><code>pothole_df |&gt; 
   as_tibble() |&gt; 
@@ -180,7 +179,7 @@ There is some positive relationship between lower average temperatures in previo
   geom_smooth(method = &quot;lm&quot;) +
   facet_wrap(vars(name), scales = &quot;free&quot;) +
   labs(title = &quot;Pothole reports vs. the temperature difference&quot;)</code></pre>
-<p><img src="{{< blogdown/postref >}}index.en_files/figure-html/unnamed-chunk-11-1.png" width="672" />
+<p><img src="{{< blogdown/postref >}}index.en_files/figure-html/unnamed-chunk-12-1.png" width="672" />
 There is a weakly positive relationship between temperature difference in the current month and pothole reports. Longer lags develop a negative relationship.</p>
 <pre class="r"><code>pothole_df |&gt; 
   as_tibble() |&gt; 
@@ -191,7 +190,7 @@ There is a weakly positive relationship between temperature difference in the cu
   geom_smooth(method = &quot;lm&quot;) +
   facet_wrap(vars(name), scales = &quot;free&quot;) +
   labs(title = &quot;Pothole reports vs. the minimum temperature&quot;)</code></pre>
-<p><img src="{{< blogdown/postref >}}index.en_files/figure-html/unnamed-chunk-12-1.png" width="672" />
+<p><img src="{{< blogdown/postref >}}index.en_files/figure-html/unnamed-chunk-13-1.png" width="672" />
 There appears to be a positive relationship between lower minimum temperature in previous months and pothole reports.</p>
 <pre class="r"><code>pothole_df |&gt; 
   as_tibble() |&gt; 
@@ -202,7 +201,7 @@ There appears to be a positive relationship between lower minimum temperature in
   geom_smooth(method = &quot;lm&quot;) +
   facet_wrap(vars(name), scales = &quot;free&quot;) +
   labs(title = &quot;Pothole reports vs. the maximum temperature&quot;)</code></pre>
-<p><img src="{{< blogdown/postref >}}index.en_files/figure-html/unnamed-chunk-13-1.png" width="672" />
+<p><img src="{{< blogdown/postref >}}index.en_files/figure-html/unnamed-chunk-14-1.png" width="672" />
 There is some positive relationship between lower maximum temperature in previous months and pothole reports.</p>
 <pre class="r"><code>pothole_df |&gt; 
   as_tibble() |&gt; 
@@ -213,7 +212,7 @@ There is some positive relationship between lower maximum temperature in previou
   geom_smooth(method = &quot;lm&quot;) +
   facet_wrap(vars(name), scales = &quot;free&quot;) +
   labs(title = &quot;Pothole reports vs. precipitation&quot;)</code></pre>
-<p><img src="{{< blogdown/postref >}}index.en_files/figure-html/unnamed-chunk-14-1.png" width="672" />
+<p><img src="{{< blogdown/postref >}}index.en_files/figure-html/unnamed-chunk-15-1.png" width="672" />
 There is a positive relationship between the total precipitation in the current month and pothole reports.</p>
 </div>
 </div>
@@ -260,7 +259,7 @@ progressr::with_progress(
     )
 )
 toc()</code></pre>
-<pre><code>## 313.389 sec elapsed</code></pre>
+<pre><code>## 314.612 sec elapsed</code></pre>
 <p>The “exo_custom” models represent a naive guess at what combinations of weather variables are most related, based on the previous graphs. A more methodological meteorological approach would probably be much better.</p>
 <p>I use <code>new_data</code> to generate 12 new future observations for each CV <code>.id</code> and make a forecast for each <code>.id</code> and <code>.model</code>.</p>
 <pre class="r"><code>horizon_data &lt;- new_data(pothole_cv, 12) |&gt; 
@@ -299,7 +298,7 @@ fc_exo_acc &lt;- pothole_fc_exo |&gt;
   select(.model, .type, RMSE, skill_crps) |&gt; 
   arrange(desc(skill_crps))
 toc()</code></pre>
-<pre><code>## 280.293 sec elapsed</code></pre>
+<pre><code>## 257.75 sec elapsed</code></pre>
 <pre class="r"><code>fc_exo_acc</code></pre>
 <pre><code>## # A tibble: 13 × 4
 ##    .model           .type  RMSE skill_crps
@@ -325,7 +324,7 @@ toc()</code></pre>
   geom_point() +
   ggrepel::geom_label_repel(max.overlaps = 100) +
   scale_x_reverse()</code></pre>
-<p><img src="{{< blogdown/postref >}}index.en_files/figure-html/unnamed-chunk-19-1.png" width="672" /></p>
+<p><img src="{{< blogdown/postref >}}index.en_files/figure-html/unnamed-chunk-20-1.png" width="672" /></p>
 </div>
 </div>
 <div id="scenario-forecasting" class="section level3">
@@ -469,7 +468,7 @@ str(fc_scenarios, max.level = 1)</code></pre>
   mutate(.scenario = as.factor(.scenario)) |&gt; 
   ggplot(aes(created_yearmonth, prcp_sum, color = .scenario)) +
   geom_line()</code></pre>
-<p><img src="{{< blogdown/postref >}}index.en_files/figure-html/unnamed-chunk-24-1.png" width="672" /></p>
+<p><img src="{{< blogdown/postref >}}index.en_files/figure-html/unnamed-chunk-25-1.png" width="672" /></p>
 <p>Finally, I refit the model against the entire history and forecast against each scenario.</p>
 <pre class="r"><code>#refit best model on total history
 final_exo_model &lt;- pothole_df |&gt; 
@@ -499,7 +498,7 @@ scenerio_fc |&gt;
   mutate(.scenario = fct_rev(.scenario)) |&gt; 
   autoplot() +
   facet_wrap(vars(.scenario), scales = &quot;fixed&quot;, ncol = 1)</code></pre>
-<p><img src="{{< blogdown/postref >}}index.en_files/figure-html/unnamed-chunk-26-1.png" width="672" /></p>
+<p><img src="{{< blogdown/postref >}}index.en_files/figure-html/unnamed-chunk-27-1.png" width="672" /></p>
 <p>The model predicts that the scenario with more precipitation will have ~1,000 more pothole reports in the next 12 months than the scenario with less precipitation.</p>
 <pre class="r"><code>scenerio_fc |&gt; 
   as_tibble() |&gt; 
@@ -508,7 +507,7 @@ scenerio_fc |&gt;
   ggplot(aes(total_pothole_fc, .scenario)) +
   geom_col() +
   scale_x_comma()</code></pre>
-<p><img src="{{< blogdown/postref >}}index.en_files/figure-html/unnamed-chunk-27-1.png" width="672" /></p>
+<p><img src="{{< blogdown/postref >}}index.en_files/figure-html/unnamed-chunk-28-1.png" width="672" /></p>
 <pre class="r"><code>sessionInfo()</code></pre>
 <pre><code>## R version 4.3.1 (2023-06-16)
 ## Platform: x86_64-apple-darwin20 (64-bit)
