@@ -1,0 +1,150 @@
+---
+title: Analyzing US labor participation rates with {feasts}
+author: Conor Tompkins
+date: '2023-11-14'
+slug: analyzing-us-labor-participation-rate-with-feasts
+categories: []
+tags: []
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2023-11-14T19:44:21-05:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      message = FALSE,
+                      warning = FALSE)
+```
+
+
+```{r}
+library(tidyverse)
+library(fpp3)
+library(broom)
+library(fredr)
+library(hrbrthemes)
+
+theme_set(theme_ipsum())
+
+options(scipen = 999, digits = 4)
+```
+
+## Intro
+
+### Load in data from FRED
+
+
+```{r}
+fred_df_raw <- c("men" = "LNU01300001",
+             "women" = "LNU01300002") |> 
+  map_dfr(fredr, .id = "series")
+
+glimpse(fred_df_raw)
+```
+
+#### Time series EDA
+
+```{r}
+fred_df <- fred_df_raw |> 
+  select(series, date, value) |> 
+  rename(participation_rate = value) |> 
+  mutate(date = yearmonth(date)) |> 
+  as_tsibble(key = series, index = date)
+
+autoplot(fred_df)
+```
+
+```{r}
+stl_models <- fred_df |> 
+  model(stl = STL(participation_rate ~ trend() + season(), robust = TRUE))
+
+stl_models |> 
+  filter(series == "men") |> 
+  components() |> 
+  autoplot()
+
+stl_models |> 
+  filter(series == "women") |> 
+  components() |> 
+  autoplot()
+```
+
+#### Features
+
+```{r}
+fred_features <- fred_df |>
+  features(participation_rate, feature_set(pkgs = "feasts"))
+
+glimpse(fred_features)
+```
+
+```{r}
+fred_features |> 
+  select(series, trend_strength, seasonal_strength_year, spectral_entropy)
+```
+
+#### Tiled time series
+```{r}
+fred_slide <- slide_tsibble(fred_df, .size = 5*12, .step = 1)
+
+glimpse(fred_slide)
+
+fred_slide |> 
+  count(series, .id)
+
+fred_slide |> 
+  count(series, date) |> 
+  ggplot(aes(date, n)) +
+  geom_line()
+```
+
+```{r}
+fred_features_slide <- fred_slide |>
+  features(participation_rate, feature_set(pkgs = "feasts"))
+
+glimpse(fred_features_slide)
+```
+
+```{r}
+fred_features_slide |> 
+  ggplot(aes(trend_strength, seasonal_strength_year, fill = series, label = .id)) +
+  geom_label() +
+  geom_path()
+
+fred_features_slide |> 
+  select(.id, series, trend_strength, seasonal_strength_year, spectral_entropy) |> 
+  pivot_longer(-c(.id, series)) |> 
+  ggplot(aes(.id, value, color = series)) +
+  geom_line() +
+  facet_wrap(vars(name), ncol = 1)
+```
+
+```{r}
+pcs <- fred_features_slide |>
+  select(-c(series, .id, zero_run_mean, bp_pvalue, lb_pvalue, zero_end_prop, zero_start_prop, zero_run_mean)) |>
+  prcomp(scale = TRUE) |>
+  augment(fred_features_slide)
+
+pcs |>
+  ggplot(aes(x = .fittedPC1, y = .fittedPC2, col = series)) +
+  geom_point() +
+  theme(aspect.ratio = 1)
+```
+
+```{r}
+pcs |> 
+  select(.id, series, .fittedPC1, .fittedPC2) |> 
+  pivot_longer(cols = contains("PC")) |> 
+  ggplot(aes(.id, value, color = name, lty = series)) +
+  geom_line() +
+  facet_wrap(vars(name), ncol = 1)
+```
+
+
