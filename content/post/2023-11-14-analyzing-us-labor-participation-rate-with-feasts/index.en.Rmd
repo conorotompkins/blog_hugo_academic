@@ -15,6 +15,8 @@ image:
   focal_point: ''
   preview_only: no
 projects: []
+editor_options: 
+  chunk_output_type: console
 ---
 
 ```{r setup, include=FALSE}
@@ -30,6 +32,7 @@ library(fpp3)
 library(broom)
 library(fredr)
 library(hrbrthemes)
+library(tictoc)
 
 theme_set(theme_ipsum())
 
@@ -90,6 +93,22 @@ fred_features |>
   select(series, trend_strength, seasonal_strength_year, spectral_entropy)
 ```
 
+```{r}
+month_lookup <- tibble(month_int = c(0:11),
+                       month = month.abb) |> 
+  mutate(month = fct(month, levels = month.abb))
+
+fred_features |> 
+  select(series, seasonal_peak_year, seasonal_trough_year) |> 
+  left_join(month_lookup, by = c("seasonal_peak_year" = "month_int")) |> 
+  select(-seasonal_peak_year) |> 
+  rename(seasonal_peak_year = month) |> 
+  left_join(month_lookup, by = c("seasonal_trough_year" = "month_int")) |> 
+  select(-seasonal_trough_year) |> 
+  rename(seasonal_trough_year = month)
+```
+
+
 #### Tiled time series
 ```{r}
 fred_slide <- slide_tsibble(fred_df, .size = 5*12, .step = 1)
@@ -97,7 +116,8 @@ fred_slide <- slide_tsibble(fred_df, .size = 5*12, .step = 1)
 glimpse(fred_slide)
 
 fred_slide |> 
-  count(series, .id)
+  count(series, .id) |> 
+  distinct(n)
 
 fred_slide |> 
   count(series, date) |> 
@@ -106,8 +126,17 @@ fred_slide |>
 ```
 
 ```{r}
+period_start <- fred_slide |> 
+  as_tibble() |> 
+  group_by(series, .id) |> 
+  summarize(period_starting = min(date)) |> 
+  ungroup()
+
+tic()
 fred_features_slide <- fred_slide |>
-  features(participation_rate, feature_set(pkgs = "feasts"))
+  features(participation_rate, feature_set(pkgs = "feasts")) |> 
+  left_join(period_start, by = c("series", ".id"))
+toc()
 
 glimpse(fred_features_slide)
 ```
@@ -117,18 +146,41 @@ fred_features_slide |>
   ggplot(aes(trend_strength, seasonal_strength_year, fill = series, label = .id)) +
   geom_label() +
   geom_path()
+```
 
+```{r}
 fred_features_slide |> 
-  select(.id, series, trend_strength, seasonal_strength_year, spectral_entropy) |> 
-  pivot_longer(-c(.id, series)) |> 
-  ggplot(aes(.id, value, color = series)) +
+  select(.id, period_starting, series, trend_strength, seasonal_strength_year, spectral_entropy) |> 
+  pivot_longer(-c(.id, series, period_starting)) |> 
+  mutate(name = fct_inorder(name)) |> 
+  ggplot(aes(period_starting, value, color = series)) +
   geom_line() +
   facet_wrap(vars(name), ncol = 1)
 ```
 
 ```{r}
+month_seasonality <- fred_features_slide |> 
+  select(series, .id, period_starting, seasonal_peak_year, seasonal_trough_year) |> 
+  left_join(month_lookup, by = c("seasonal_peak_year" = "month_int")) |> 
+  select(-seasonal_peak_year) |> 
+  rename(seasonal_peak_year = month) |> 
+  left_join(month_lookup, by = c("seasonal_trough_year" = "month_int")) |> 
+  select(-seasonal_trough_year) |> 
+  rename(seasonal_trough_year = month) |> 
+  arrange(series, period_starting)
+
+month_seasonality |> 
+  count(series)
+
+month_seasonality |> 
+  count(series, seasonal_peak_year) |> 
+  view()
+```
+
+
+```{r}
 pcs <- fred_features_slide |>
-  select(-c(series, .id, zero_run_mean, bp_pvalue, lb_pvalue, zero_end_prop, zero_start_prop, zero_run_mean)) |>
+  select(-c(series, .id, period_starting, zero_run_mean, bp_pvalue, lb_pvalue, zero_end_prop, zero_start_prop, zero_run_mean)) |>
   prcomp(scale = TRUE) |>
   augment(fred_features_slide)
 
@@ -140,7 +192,7 @@ pcs |>
 
 ```{r}
 pcs |> 
-  select(.id, series, .fittedPC1, .fittedPC2) |> 
+  select(.id, period_starting, series, .fittedPC1, .fittedPC2) |> 
   pivot_longer(cols = contains("PC")) |> 
   ggplot(aes(.id, value, color = name, lty = series)) +
   geom_line() +
