@@ -1,0 +1,255 @@
+---
+title: Analyzing US labor participation rates with {feasts}
+author: Conor Tompkins
+date: '2023-11-14'
+slug: analyzing-us-labor-participation-rate-with-feasts
+categories: []
+tags: []
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2023-11-14T19:44:21-05:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+
+
+
+<pre class="r"><code>library(tidyverse)
+library(fpp3)
+library(broom)
+library(fredr)
+library(hrbrthemes)
+
+theme_set(theme_ipsum())
+
+options(scipen = 999, digits = 4)</code></pre>
+<div id="intro" class="section level2">
+<h2>Intro</h2>
+<div id="load-in-data-from-fred" class="section level3">
+<h3>Load in data from FRED</h3>
+<pre class="r"><code>fred_df_raw &lt;- c(&quot;men&quot; = &quot;LNU01300001&quot;,
+             &quot;women&quot; = &quot;LNU01300002&quot;) |&gt; 
+  map_dfr(fredr, .id = &quot;series&quot;)
+
+glimpse(fred_df_raw)</code></pre>
+<pre><code>## Rows: 1,820
+## Columns: 6
+## $ series         &lt;chr&gt; &quot;men&quot;, &quot;men&quot;, &quot;men&quot;, &quot;men&quot;, &quot;men&quot;, &quot;men&quot;, &quot;men&quot;, &quot;men&quot;,…
+## $ date           &lt;date&gt; 1948-01-01, 1948-02-01, 1948-03-01, 1948-04-01, 1948-0…
+## $ series_id      &lt;chr&gt; &quot;LNU01300001&quot;, &quot;LNU01300001&quot;, &quot;LNU01300001&quot;, &quot;LNU013000…
+## $ value          &lt;dbl&gt; 85.2, 85.5, 85.5, 86.0, 85.7, 87.8, 88.7, 88.5, 86.9, 8…
+## $ realtime_start &lt;date&gt; 2023-11-14, 2023-11-14, 2023-11-14, 2023-11-14, 2023-1…
+## $ realtime_end   &lt;date&gt; 2023-11-14, 2023-11-14, 2023-11-14, 2023-11-14, 2023-1…</code></pre>
+<div id="time-series-eda" class="section level4">
+<h4>Time series EDA</h4>
+<pre class="r"><code>fred_df &lt;- fred_df_raw |&gt; 
+  select(series, date, value) |&gt; 
+  rename(participation_rate = value) |&gt; 
+  mutate(date = yearmonth(date)) |&gt; 
+  as_tsibble(key = series, index = date)
+
+autoplot(fred_df)</code></pre>
+<p><img src="{{< blogdown/postref >}}index.en_files/figure-html/unnamed-chunk-3-1.png" width="672" /></p>
+<pre class="r"><code>stl_models &lt;- fred_df |&gt; 
+  model(stl = STL(participation_rate ~ trend() + season(), robust = TRUE))
+
+stl_models |&gt; 
+  filter(series == &quot;men&quot;) |&gt; 
+  components() |&gt; 
+  autoplot()</code></pre>
+<p><img src="{{< blogdown/postref >}}index.en_files/figure-html/unnamed-chunk-4-1.png" width="672" /></p>
+<pre class="r"><code>stl_models |&gt; 
+  filter(series == &quot;women&quot;) |&gt; 
+  components() |&gt; 
+  autoplot()</code></pre>
+<p><img src="{{< blogdown/postref >}}index.en_files/figure-html/unnamed-chunk-4-2.png" width="672" /></p>
+</div>
+<div id="features" class="section level4">
+<h4>Features</h4>
+<pre class="r"><code>fred_features &lt;- fred_df |&gt;
+  features(participation_rate, feature_set(pkgs = &quot;feasts&quot;))
+
+glimpse(fred_features)</code></pre>
+<pre><code>## Rows: 2
+## Columns: 48
+## $ series                 &lt;chr&gt; &quot;men&quot;, &quot;women&quot;
+## $ trend_strength         &lt;dbl&gt; 0.9989, 0.9995
+## $ seasonal_strength_year &lt;dbl&gt; 0.9669, 0.7736
+## $ seasonal_peak_year     &lt;dbl&gt; 7, 10
+## $ seasonal_trough_year   &lt;dbl&gt; 1, 1
+## $ spikiness              &lt;dbl&gt; 0.00000001438, 0.00000001968
+## $ linearity              &lt;dbl&gt; -158.1, 256.7
+## $ curvature              &lt;dbl&gt; 8.235, -97.913
+## $ stl_e_acf1             &lt;dbl&gt; 0.3234, 0.3059
+## $ stl_e_acf10            &lt;dbl&gt; 0.2485, 0.2772
+## $ acf1                   &lt;dbl&gt; 0.9875, 0.9962
+## $ acf10                  &lt;dbl&gt; 8.936, 9.674
+## $ diff1_acf1             &lt;dbl&gt; 0.278748, 0.005631
+## $ diff1_acf10            &lt;dbl&gt; 0.4533, 0.2133
+## $ diff2_acf1             &lt;dbl&gt; -0.2148, -0.3774
+## $ diff2_acf10            &lt;dbl&gt; 0.6394, 0.3498
+## $ season_acf1            &lt;dbl&gt; 0.9566, 0.9703
+## $ pacf5                  &lt;dbl&gt; 1.088, 1.002
+## $ diff1_pacf5            &lt;dbl&gt; 1.5838, 0.5034
+## $ diff2_pacf5            &lt;dbl&gt; 1.654, 1.063
+## $ season_pacf            &lt;dbl&gt; -0.15255, -0.04049
+## $ zero_run_mean          &lt;dbl&gt; 0, 0
+## $ nonzero_squared_cv     &lt;dbl&gt; 0.004943, 0.034816
+## $ zero_start_prop        &lt;dbl&gt; 0, 0
+## $ zero_end_prop          &lt;dbl&gt; 0, 0
+## $ lambda_guerrero        &lt;dbl&gt; -0.8999, 1.9999
+## $ kpss_stat              &lt;dbl&gt; 12.31, 11.84
+## $ kpss_pvalue            &lt;dbl&gt; 0.01, 0.01
+## $ pp_stat                &lt;dbl&gt; -1.793, -2.301
+## $ pp_pvalue              &lt;dbl&gt; 0.1, 0.1
+## $ ndiffs                 &lt;int&gt; 1, 2
+## $ nsdiffs                &lt;int&gt; 1, 1
+## $ bp_stat                &lt;dbl&gt; 887.4, 903.0
+## $ bp_pvalue              &lt;dbl&gt; 0, 0
+## $ lb_stat                &lt;dbl&gt; 890.3, 906.0
+## $ lb_pvalue              &lt;dbl&gt; 0, 0
+## $ var_tiled_var          &lt;dbl&gt; 0.00058759, 0.00001479
+## $ var_tiled_mean         &lt;dbl&gt; 0.9839, 1.0078
+## $ shift_level_max        &lt;dbl&gt; 1.883, 2.025
+## $ shift_level_index      &lt;dbl&gt; 868, 2
+## $ shift_var_max          &lt;dbl&gt; 1.374, 1.396
+## $ shift_var_index        &lt;dbl&gt; 3, 862
+## $ shift_kl_max           &lt;dbl&gt; 0.2328, 0.0409
+## $ shift_kl_index         &lt;dbl&gt; 866, 147
+## $ spectral_entropy       &lt;dbl&gt; 0.04755, 0.04839
+## $ n_crossing_points      &lt;int&gt; 41, 9
+## $ longest_flat_spot      &lt;int&gt; 80, 236
+## $ stat_arch_lm           &lt;dbl&gt; 0.9816, 0.9885</code></pre>
+<pre class="r"><code>fred_features |&gt; 
+  select(series, trend_strength, seasonal_strength_year, spectral_entropy)</code></pre>
+<pre><code>## # A tibble: 2 × 4
+##   series trend_strength seasonal_strength_year spectral_entropy
+##   &lt;chr&gt;           &lt;dbl&gt;                  &lt;dbl&gt;            &lt;dbl&gt;
+## 1 men             0.999                  0.967           0.0476
+## 2 women           0.999                  0.774           0.0484</code></pre>
+</div>
+<div id="tiled-time-series" class="section level4">
+<h4>Tiled time series</h4>
+<pre class="r"><code>fred_slide &lt;- slide_tsibble(fred_df, .size = 5*12, .step = 1)
+
+glimpse(fred_slide)</code></pre>
+<pre><code>## Rows: 102,120
+## Columns: 4
+## Key: .id, series [1,702]
+## $ series             &lt;chr&gt; &quot;men&quot;, &quot;men&quot;, &quot;men&quot;, &quot;men&quot;, &quot;men&quot;, &quot;men&quot;, &quot;men&quot;, &quot;m…
+## $ date               &lt;mth&gt; 1948 Jan, 1948 Feb, 1948 Mar, 1948 Apr, 1948 May, 1…
+## $ participation_rate &lt;dbl&gt; 85.2, 85.5, 85.5, 86.0, 85.7, 87.8, 88.7, 88.5, 86.…
+## $ .id                &lt;int&gt; 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, …</code></pre>
+<pre class="r"><code>fred_slide |&gt; 
+  count(series, .id)</code></pre>
+<pre><code>## # A tibble: 1,702 × 3
+##    series   .id     n
+##    &lt;chr&gt;  &lt;int&gt; &lt;int&gt;
+##  1 men        1    60
+##  2 men        2    60
+##  3 men        3    60
+##  4 men        4    60
+##  5 men        5    60
+##  6 men        6    60
+##  7 men        7    60
+##  8 men        8    60
+##  9 men        9    60
+## 10 men       10    60
+## # ℹ 1,692 more rows</code></pre>
+<pre class="r"><code>fred_slide |&gt; 
+  count(series, date) |&gt; 
+  ggplot(aes(date, n)) +
+  geom_line()</code></pre>
+<p><img src="{{< blogdown/postref >}}index.en_files/figure-html/unnamed-chunk-7-1.png" width="672" /></p>
+<pre class="r"><code>fred_features_slide &lt;- fred_slide |&gt;
+  features(participation_rate, feature_set(pkgs = &quot;feasts&quot;))
+
+glimpse(fred_features_slide)</code></pre>
+<pre><code>## Rows: 1,702
+## Columns: 49
+## $ .id                    &lt;int&gt; 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8,…
+## $ series                 &lt;chr&gt; &quot;men&quot;, &quot;women&quot;, &quot;men&quot;, &quot;women&quot;, &quot;men&quot;, &quot;women&quot;,…
+## $ trend_strength         &lt;dbl&gt; 0.4700, 0.8573, 0.4065, 0.8563, 0.3590, 0.8539,…
+## $ seasonal_strength_year &lt;dbl&gt; 0.9673, 0.8359, 0.9631, 0.8315, 0.9607, 0.8300,…
+## $ seasonal_peak_year     &lt;dbl&gt; 7, 11, 6, 10, 5, 9, 4, 8, 3, 7, 2, 6, 1, 5, 1, …
+## $ seasonal_trough_year   &lt;dbl&gt; 1, 1, 0, 1, 11, 11, 10, 10, 9, 9, 8, 8, 7, 7, 6…
+## $ spikiness              &lt;dbl&gt; 0.0000005456, 0.0000070468, 0.0000007289, 0.000…
+## $ linearity              &lt;dbl&gt; -0.7693, 6.1358, -0.7608, 5.9934, -0.6943, 5.90…
+## $ curvature              &lt;dbl&gt; -0.2834134, -0.7818928, -0.2068885, -0.6071114,…
+## $ stl_e_acf1             &lt;dbl&gt; 0.13959, -0.13905, 0.20689, -0.17366, 0.27223, …
+## $ stl_e_acf10            &lt;dbl&gt; 0.2081, 0.2333, 0.3045, 0.2118, 0.3508, 0.2157,…
+## $ acf1                   &lt;dbl&gt; 0.7356, 0.7459, 0.7336, 0.7444, 0.7373, 0.7228,…
+## $ acf10                  &lt;dbl&gt; 2.220, 1.339, 2.186, 1.329, 2.127, 1.281, 2.079…
+## $ diff1_acf1             &lt;dbl&gt; 0.34697, -0.16329, 0.34620, -0.12978, 0.34467, …
+## $ diff1_acf10            &lt;dbl&gt; 0.5431, 0.1650, 0.5441, 0.1693, 0.5458, 0.1662,…
+## $ diff2_acf1             &lt;dbl&gt; -0.2156, -0.5339, -0.2125, -0.5482, -0.2074, -0…
+## $ diff2_acf10            &lt;dbl&gt; 0.3875, 0.4953, 0.3837, 0.5254, 0.4214, 0.5384,…
+## $ season_acf1            &lt;dbl&gt; 0.7241, 0.5812, 0.7182, 0.5551, 0.7150, 0.5301,…
+## $ pacf5                  &lt;dbl&gt; 1.1622, 0.5624, 1.0755, 0.5949, 1.1054, 0.5440,…
+## $ diff1_pacf5            &lt;dbl&gt; 0.8040, 0.4566, 0.7920, 0.4928, 0.7954, 0.4737,…
+## $ diff2_pacf5            &lt;dbl&gt; 0.8921, 0.7308, 0.8728, 0.9942, 0.8470, 1.0247,…
+## $ season_pacf            &lt;dbl&gt; 0.034998, 0.011871, 0.054426, -0.119022, 0.0272…
+## $ zero_run_mean          &lt;dbl&gt; 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,…
+## $ nonzero_squared_cv     &lt;dbl&gt; 0.0001406, 0.0013584, 0.0001406, 0.0012111, 0.0…
+## $ zero_start_prop        &lt;dbl&gt; 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,…
+## $ zero_end_prop          &lt;dbl&gt; 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,…
+## $ lambda_guerrero        &lt;dbl&gt; -0.8999, 1.9999, -0.8999, 1.9999, 1.9999, 1.999…
+## $ kpss_stat              &lt;dbl&gt; 0.02680, 1.15688, 0.04207, 1.11709, 0.07001, 1.…
+## $ kpss_pvalue            &lt;dbl&gt; 0.10, 0.01, 0.10, 0.01, 0.10, 0.01, 0.10, 0.01,…
+## $ pp_stat                &lt;dbl&gt; -3.460, -3.135, -3.358, -3.119, -3.378, -3.353,…
+## $ pp_pvalue              &lt;dbl&gt; 0.01529, 0.03583, 0.02172, 0.03685, 0.02047, 0.…
+## $ ndiffs                 &lt;int&gt; 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1,…
+## $ nsdiffs                &lt;int&gt; 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,…
+## $ bp_stat                &lt;dbl&gt; 32.47, 33.38, 32.29, 33.25, 32.61, 31.34, 33.56…
+## $ bp_pvalue              &lt;dbl&gt; 0.000000012130, 0.000000007587, 0.000000013269,…
+## $ lb_stat                &lt;dbl&gt; 34.12, 35.08, 33.93, 34.94, 34.27, 32.94, 35.27…
+## $ lb_pvalue              &lt;dbl&gt; 0.000000005190, 0.000000003172, 0.000000005703,…
+## $ var_tiled_var          &lt;dbl&gt; 0.03410, 0.02917, 0.03475, 0.02091, 0.05343, 0.…
+## $ var_tiled_mean         &lt;dbl&gt; 0.01339, 0.52359, 0.02047, 0.56216, 0.02692, 0.…
+## $ shift_level_max        &lt;dbl&gt; 1.3750, 2.0250, 1.1000, 1.4083, 1.1000, 1.4083,…
+## $ shift_level_index      &lt;dbl&gt; 2, 2, 3, 3, 2, 2, 6, 3, 5, 2, 4, 2, 2, 2, 2, 10…
+## $ shift_var_max          &lt;dbl&gt; 1.3738, 1.0798, 1.3545, 0.8793, 1.2302, 0.9961,…
+## $ shift_var_index        &lt;dbl&gt; 3, 8, 3, 7, 4, 5, 3, 4, 4, 3, 4, 8, 3, 7, 39, 6…
+## $ shift_kl_max           &lt;dbl&gt; 0.07219, 0.38035, 0.08154, 0.22099, 0.09143, 0.…
+## $ shift_kl_index         &lt;dbl&gt; 48, 16, 4, 26, 3, 3, 5, 24, 4, 12, 43, 11, 2, 1…
+## $ spectral_entropy       &lt;dbl&gt; 0.4013, 0.6782, 0.4676, 0.7197, 0.3831, 0.5705,…
+## $ n_crossing_points      &lt;int&gt; 10, 15, 10, 15, 10, 13, 10, 13, 10, 13, 9, 15, …
+## $ longest_flat_spot      &lt;int&gt; 3, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 3,…
+## $ stat_arch_lm           &lt;dbl&gt; 0.7055, 0.5148, 0.7030, 0.5219, 0.7065, 0.4819,…</code></pre>
+<pre class="r"><code>fred_features_slide |&gt; 
+  ggplot(aes(trend_strength, seasonal_strength_year, fill = series, label = .id)) +
+  geom_label() +
+  geom_path()</code></pre>
+<p><img src="{{< blogdown/postref >}}index.en_files/figure-html/unnamed-chunk-9-1.png" width="672" /></p>
+<pre class="r"><code>fred_features_slide |&gt; 
+  select(.id, series, trend_strength, seasonal_strength_year, spectral_entropy) |&gt; 
+  pivot_longer(-c(.id, series)) |&gt; 
+  ggplot(aes(.id, value, color = series)) +
+  geom_line() +
+  facet_wrap(vars(name), ncol = 1)</code></pre>
+<p><img src="{{< blogdown/postref >}}index.en_files/figure-html/unnamed-chunk-9-2.png" width="672" /></p>
+<pre class="r"><code>pcs &lt;- fred_features_slide |&gt;
+  select(-c(series, .id, zero_run_mean, bp_pvalue, lb_pvalue, zero_end_prop, zero_start_prop, zero_run_mean)) |&gt;
+  prcomp(scale = TRUE) |&gt;
+  augment(fred_features_slide)
+
+pcs |&gt;
+  ggplot(aes(x = .fittedPC1, y = .fittedPC2, col = series)) +
+  geom_point() +
+  theme(aspect.ratio = 1)</code></pre>
+<p><img src="{{< blogdown/postref >}}index.en_files/figure-html/unnamed-chunk-10-1.png" width="672" /></p>
+<pre class="r"><code>pcs |&gt; 
+  select(.id, series, .fittedPC1, .fittedPC2) |&gt; 
+  pivot_longer(cols = contains(&quot;PC&quot;)) |&gt; 
+  ggplot(aes(.id, value, color = name, lty = series)) +
+  geom_line() +
+  facet_wrap(vars(name), ncol = 1)</code></pre>
+<p><img src="{{< blogdown/postref >}}index.en_files/figure-html/unnamed-chunk-11-1.png" width="672" /></p>
+</div>
+</div>
+</div>
